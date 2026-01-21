@@ -20,26 +20,23 @@ export default function LoginScreen({ onLogin }) {
     <div className="login-container">
       <div className="login-card">
         <div className="login-logo">
-          <svg viewBox="0 0 48 48" className="logo-icon">
-            <rect x="4" y="4" width="18" height="18" rx="2" fill="currentColor" opacity="0.9"/>
-            <rect x="26" y="4" width="18" height="18" rx="2" fill="currentColor" opacity="0.6"/>
-            <rect x="4" y="26" width="18" height="18" rx="2" fill="currentColor" opacity="0.6"/>
-            <rect x="26" y="26" width="18" height="18" rx="2" fill="currentColor" opacity="0.3"/>
-          </svg>
+          <div className="logo-mark">
+            <span className="logo-t">T</span>
+          </div>
         </div>
-        <h1>Brand Engine</h1>
-        <p className="login-subtitle">Multi-Brand Marketing Platform</p>
+        <h1>TYRN.ON</h1>
+        <p className="login-subtitle">Brand Engine</p>
 
         <form onSubmit={handleSubmit}>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Team-Passwort eingeben"
+            placeholder="Team-Passwort"
             autoFocus
           />
           {error && <p className="error-message">{error}</p>}
-          <button type="submit">Anmelden</button>
+          <button type="submit">Einloggen</button>
         </form>
       </div>
     </div>

@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.91.0",
     "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^3.12.0",

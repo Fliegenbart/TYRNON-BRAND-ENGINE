@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { previewComponents } from './previews/index.jsx';
-import AITextGenerator from './AITextGenerator';
+import AIStudio from './AIStudio';
 import ContentEditor from './ContentEditor';
-import QRCodeGenerator from './QRCodeGenerator';
 import ImagePicker from './ImagePicker';
 import ExportPanel from './ExportPanel';
 
@@ -16,27 +15,28 @@ const assetTypes = [
 ];
 
 export default function AssetPreview({ brand, selectedAsset, onAssetChange, content, onContentChange }) {
-  const [activeToolTab, setActiveToolTab] = useState('content');
+  const [activeToolTab, setActiveToolTab] = useState('ai');
 
   const PreviewComponent = previewComponents[selectedAsset];
 
-  const handleInsertText = (text) => {
-    const lines = text.split('\n').filter(l => l.trim());
-    const headline = lines[0]?.replace(/^\d+\.\s*/, '') || '';
+  const handleApplyAIContent = (generatedText) => {
+    // Parse the generated text and apply to content fields
+    const lines = generatedText.split('\n').filter(l => l.trim());
+    const headline = lines.find(l => l.includes('Headline') || l.includes('HEADLINE'))?.replace(/.*?[:：]\s*/, '').replace(/\*\*/g, '') || '';
 
     onContentChange({
       ...content,
       fields: {
         ...content.fields,
-        headline: { value: headline },
-        body: { value: text }
+        headline: { value: headline || lines[0]?.replace(/^\d+\.\s*/, '').replace(/\*\*/g, '') || '' },
+        body: { value: generatedText }
       }
     });
   };
 
   const toolTabs = [
+    { id: 'ai', name: 'AI Studio', icon: '*' },
     { id: 'content', name: 'Inhalt', icon: 'C' },
-    { id: 'ai', name: 'AI', icon: 'A' },
     { id: 'media', name: 'Medien', icon: 'M' },
     { id: 'export', name: 'Export', icon: 'E' },
   ];
@@ -51,7 +51,7 @@ export default function AssetPreview({ brand, selectedAsset, onAssetChange, cont
             onClick={() => onAssetChange(asset.id)}
           >
             <span className="asset-icon">{asset.icon}</span>
-            <span>{asset.name}</span>
+            <span className="asset-name">{asset.name}</span>
           </button>
         ))}
       </div>
@@ -71,12 +71,21 @@ export default function AssetPreview({ brand, selectedAsset, onAssetChange, cont
                 className={`tool-tab ${activeToolTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveToolTab(tab.id)}
               >
-                {tab.name}
+                <span className="tab-icon">{tab.icon}</span>
+                <span className="tab-name">{tab.name}</span>
               </button>
             ))}
           </div>
 
           <div className="tool-content">
+            {activeToolTab === 'ai' && (
+              <AIStudio
+                brand={brand}
+                selectedAsset={selectedAsset}
+                onApplyContent={handleApplyAIContent}
+              />
+            )}
+
             {activeToolTab === 'content' && (
               <ContentEditor
                 assetType={selectedAsset}
@@ -86,19 +95,25 @@ export default function AssetPreview({ brand, selectedAsset, onAssetChange, cont
               />
             )}
 
-            {activeToolTab === 'ai' && (
-              <AITextGenerator brand={brand} onInsertText={handleInsertText} />
-            )}
-
             {activeToolTab === 'media' && (
-              <>
-                <QRCodeGenerator brand={brand} content={content} />
-                <ImagePicker brand={brand} onSelectImage={(img) => console.log('Selected:', img)} />
-              </>
+              <div className="media-panel">
+                <ImagePicker
+                  brand={brand}
+                  onSelectImage={(img) => {
+                    onContentChange({
+                      ...content,
+                      fields: {
+                        ...content.fields,
+                        image: { value: img.url || img }
+                      }
+                    });
+                  }}
+                />
+              </div>
             )}
 
             {activeToolTab === 'export' && (
-              <ExportPanel brand={brand} content={content} />
+              <ExportPanel brand={brand} content={content} assetType={selectedAsset} />
             )}
           </div>
         </div>

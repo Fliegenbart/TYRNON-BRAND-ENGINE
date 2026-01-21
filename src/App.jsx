@@ -7,6 +7,10 @@ import BrandSidebar from './components/BrandSidebar';
 import BrandEditor from './components/BrandEditor';
 import AssetPreview from './components/AssetPreview';
 import BrandImport from './components/BrandImport';
+import PresenceIndicator from './components/PresenceIndicator';
+
+// Hooks
+import { useRealtimeSync } from './hooks/useRealtimeSync.js';
 
 // Lib imports
 import { generateContentWithDefaults } from './lib/content.js';
@@ -17,38 +21,52 @@ import { exportAsset } from './lib/exporters/index.js';
 // ============================================
 
 function BrandEngine() {
-  const [brands, setBrands] = useState(() => {
-    const saved = localStorage.getItem('brand_engine_brands');
-    return saved ? JSON.parse(saved) : [{
-      id: '1',
-      name: 'Demo Brand',
-      colors: { primary: '#2563eb', secondary: '#1e40af', accent: '#f59e0b', background: '#ffffff', text: '#1f2937' },
-      fonts: { heading: "'Space Grotesk', sans-serif", body: "'Inter', sans-serif" },
-      voice: { tone: 'professional', formality: 'sie', tagline: 'Innovation trifft Zuverlassigkeit', dos: 'nachhaltig, zukunftsorientiert', donts: 'billig, irgendwie' },
-      logo: null
-    }];
-  });
+  const {
+    brands,
+    assetContent,
+    onlineUsers,
+    isLoading,
+    isOnline,
+    syncError,
+    currentUser,
+    updateBrand,
+    createBrand,
+    deleteBrand,
+    updateAssetContent,
+    trackActivity
+  } = useRealtimeSync();
 
-  const [activeBrand, setActiveBrand] = useState(brands[0]);
+  const [activeBrand, setActiveBrand] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState('website');
   const [showImport, setShowImport] = useState(false);
-  const [assetContent, setAssetContent] = useState(() => {
-    const saved = localStorage.getItem('brand_engine_content');
-    return saved ? JSON.parse(saved) : {};
-  });
 
-  const currentContent = assetContent[`${activeBrand.id}-${selectedAsset}`] || generateContentWithDefaults(selectedAsset, activeBrand);
-
+  // Set active brand when brands load
   useEffect(() => {
-    localStorage.setItem('brand_engine_brands', JSON.stringify(brands));
+    if (brands.length > 0 && !activeBrand) {
+      setActiveBrand(brands[0]);
+    }
+    // Update activeBrand if it was modified by another user
+    if (activeBrand) {
+      const updated = brands.find(b => b.id === activeBrand.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(activeBrand)) {
+        setActiveBrand(updated);
+      }
+    }
   }, [brands]);
 
+  // Track user activity when they switch brands or assets
   useEffect(() => {
-    localStorage.setItem('brand_engine_content', JSON.stringify(assetContent));
-  }, [assetContent]);
+    if (activeBrand) {
+      trackActivity(activeBrand.id, selectedAsset);
+    }
+  }, [activeBrand?.id, selectedAsset, trackActivity]);
+
+  const currentContent = activeBrand
+    ? (assetContent[`${activeBrand.id}-${selectedAsset}`] || generateContentWithDefaults(selectedAsset, activeBrand))
+    : {};
 
   const handleUpdateBrand = (updatedBrand) => {
-    setBrands(brands.map(b => b.id === updatedBrand.id ? updatedBrand : b));
+    updateBrand(updatedBrand);
     setActiveBrand(updatedBrand);
   };
 
@@ -61,28 +79,52 @@ function BrandEngine() {
       voice: { tone: 'friendly', formality: 'du', tagline: '', dos: '', donts: '' },
       logo: null
     };
-    setBrands([...brands, newBrand]);
+    createBrand(newBrand);
     setActiveBrand(newBrand);
   };
 
   const handleDeleteBrand = (brandId) => {
     if (brands.length <= 1) return;
-    const newBrands = brands.filter(b => b.id !== brandId);
-    setBrands(newBrands);
-    if (activeBrand.id === brandId) setActiveBrand(newBrands[0]);
+    deleteBrand(brandId);
+    if (activeBrand?.id === brandId) {
+      const remaining = brands.filter(b => b.id !== brandId);
+      setActiveBrand(remaining[0] || null);
+    }
   };
 
   const handleContentChange = (newContent) => {
-    setAssetContent({ ...assetContent, [`${activeBrand.id}-${selectedAsset}`]: newContent });
+    if (activeBrand) {
+      updateAssetContent(activeBrand.id, selectedAsset, newContent);
+    }
   };
 
   const handleImportBrand = (importedBrand) => {
-    // Remove extractedAssets before saving (too large for localStorage)
+    // Remove extractedAssets before saving (too large)
     const { extractedAssets, ...brandToSave } = importedBrand;
-    setBrands([...brands, brandToSave]);
+    createBrand(brandToSave);
     setActiveBrand(brandToSave);
     setShowImport(false);
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Lade Brandspace...</p>
+      </div>
+    );
+  }
+
+  // No active brand yet
+  if (!activeBrand) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Initialisiere...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -92,25 +134,33 @@ function BrandEngine() {
         onSelectBrand={setActiveBrand}
         onCreateBrand={handleCreateBrand}
         onDeleteBrand={handleDeleteBrand}
+        onUpdateBrand={handleUpdateBrand}
+        onlineUsers={onlineUsers}
       />
 
       <main className="main-content">
         <header className="app-header">
-          <input
-            type="text"
-            value={activeBrand.name}
-            onChange={(e) => handleUpdateBrand({ ...activeBrand, name: e.target.value })}
-            className="brand-name-input"
-          />
+          <div className="header-left">
+            <h1 className="current-brand-name">{activeBrand.name}</h1>
+            {syncError && (
+              <span className="sync-error" title={syncError}>Offline</span>
+            )}
+            {isOnline && !syncError && (
+              <span className="sync-status" title="Mit Cloud verbunden">Sync</span>
+            )}
+          </div>
+          <div className="header-center">
+            <PresenceIndicator onlineUsers={onlineUsers} currentUser={currentUser} />
+          </div>
           <div className="header-actions">
-            <button className="btn-primary" onClick={() => setShowImport(true)}>
-              PPT Import
+            <button className="btn-ghost" onClick={() => setShowImport(true)}>
+              Import
             </button>
-            <button className="btn-secondary" onClick={() => exportAsset(activeBrand, currentContent, 'pdf-guidelines')}>
-              Brand Guidelines
+            <button className="btn-ghost" onClick={() => exportAsset(activeBrand, currentContent, 'pdf-guidelines')}>
+              Guidelines
             </button>
             <button className="btn-logout" onClick={() => { localStorage.removeItem('brand_engine_auth'); window.location.reload(); }}>
-              Abmelden
+              Logout
             </button>
           </div>
         </header>
