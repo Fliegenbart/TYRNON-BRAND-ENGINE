@@ -77,8 +77,10 @@ function BrandEngine() {
   };
 
   const handleImportBrand = (importedBrand) => {
-    setBrands([...brands, importedBrand]);
-    setActiveBrand(importedBrand);
+    // Remove extractedAssets before saving (too large for localStorage)
+    const { extractedAssets, ...brandToSave } = importedBrand;
+    setBrands([...brands, brandToSave]);
+    setActiveBrand(brandToSave);
     setShowImport(false);
   };
 
