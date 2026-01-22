@@ -1,33 +1,27 @@
 import React, { useState } from 'react';
 
-const TEAM_PASSWORD = 'brandengine2024';
-
 export default function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (password === TEAM_PASSWORD) {
-      localStorage.setItem('brand_engine_auth', 'true');
-      onLogin();
-    } else {
+    const success = onLogin(password);
+    if (!success) {
       setError('Falsches Passwort');
     }
   };
 
   return (
-    <div className="login-container">
+    <div className="login-screen">
       <div className="login-card">
         <div className="login-logo">
-          <div className="logo-mark">
-            <span className="logo-t">T</span>
-          </div>
+          <div className="logo-mark">T</div>
+          <h1>TYRN.ON</h1>
+          <p className="login-subtitle">Brand Engine</p>
         </div>
-        <h1>TYRN.ON</h1>
-        <p className="login-subtitle">Brand Engine</p>
 
-        <form onSubmit={handleSubmit}>
+        <form className="login-form" onSubmit={handleSubmit}>
           <input
             type="password"
             value={password}
@@ -35,8 +29,8 @@ export default function LoginScreen({ onLogin }) {
             placeholder="Team-Passwort"
             autoFocus
           />
-          {error && <p className="error-message">{error}</p>}
-          <button type="submit">Einloggen</button>
+          <button type="submit" className="btn-primary">Einloggen</button>
+          {error && <p className="login-error">{error}</p>}
         </form>
       </div>
     </div>
