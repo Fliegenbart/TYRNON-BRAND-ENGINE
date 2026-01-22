@@ -217,13 +217,15 @@ async function parseSlideMasters(zip, analysis) {
   for (const masterFile of masterFiles) {
     const xml = await masterFile.async('text');
     const masterName = masterFile.name;
+    const masterNum = masterName.match(/slideMaster(\d+)/)?.[1] || '1';
 
     // Extract master layout info
     const masterLayout = {
       name: masterName,
       titleStyle: null,
       bodyStyle: null,
-      placeholders: []
+      placeholders: [],
+      images: []
     };
 
     // Parse title style
@@ -287,7 +289,247 @@ async function parseSlideMasters(zip, analysis) {
       }
     }
 
+    // Extract images from slide master (logos, backgrounds, etc.)
+    await extractMasterAssets(zip, masterNum, xml, analysis, masterLayout);
+
     analysis.layouts.masterLayouts.push(masterLayout);
+  }
+
+  // Also parse slide layouts for assets
+  await extractLayoutAssets(zip, analysis);
+}
+
+/**
+ * Extract assets (logos, images) from slide master
+ */
+async function extractMasterAssets(zip, masterNum, masterXml, analysis, masterLayout) {
+  // Get the relationships file for this master
+  const relsFile = zip.file(`ppt/slideMasters/_rels/slideMaster${masterNum}.xml.rels`);
+  if (!relsFile) return;
+
+  const relsXml = await relsFile.async('text');
+
+  // Find all image relationships
+  const imageRels = {};
+  const relMatches = relsXml.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/gi);
+  for (const match of relMatches) {
+    if (match[2].includes('/media/') || match[2].includes('../media/')) {
+      imageRels[match[1]] = match[2].replace('../', 'ppt/');
+    }
+  }
+
+  // Find image references in master XML with positions
+  const picMatches = masterXml.matchAll(/<p:pic>([\s\S]*?)<\/p:pic>/gi);
+
+  for (const picMatch of picMatches) {
+    const picXml = picMatch[1];
+
+    // Get embed reference
+    const embedMatch = picXml.match(/r:embed="(rId\d+)"/);
+    if (!embedMatch) continue;
+
+    const relId = embedMatch[1];
+    const mediaPath = imageRels[relId];
+    if (!mediaPath) continue;
+
+    // Get position
+    const posMatch = picXml.match(/<a:off x="(\d+)" y="(\d+)"/);
+    const sizeMatch = picXml.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
+
+    const position = posMatch ? {
+      x: emuToPixels(posMatch[1]),
+      y: emuToPixels(posMatch[2])
+    } : null;
+
+    const size = sizeMatch ? {
+      width: emuToPixels(sizeMatch[1]),
+      height: emuToPixels(sizeMatch[2])
+    } : null;
+
+    // Extract the actual media file
+    const mediaFile = zip.file(mediaPath);
+    if (!mediaFile) continue;
+
+    const filename = mediaPath.split('/').pop();
+    const ext = filename.split('.').pop().toLowerCase();
+
+    if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'emf', 'wmf'].includes(ext)) {
+      continue;
+    }
+
+    const blob = await mediaFile.async('blob');
+    const dataUrl = await blobToDataUrl(blob);
+    const dimensions = await getImageDimensions(dataUrl);
+
+    // Assets in slide master are very likely logos or brand elements
+    const asset = {
+      name: filename,
+      data: dataUrl,
+      size: blob.size,
+      type: 'logo', // Master assets are typically logos
+      source: 'slideMaster',
+      position,
+      dimensions: dimensions || size,
+      confidence: 0.9 // High confidence for master assets
+    };
+
+    // Determine position category
+    if (position && analysis.layouts.slideSize.width > 0) {
+      const slideWidth = analysis.layouts.slideSize.width;
+      const slideHeight = analysis.layouts.slideSize.height;
+
+      if (position.x < slideWidth * 0.3 && position.y < slideHeight * 0.3) {
+        asset.positionCategory = 'top-left';
+      } else if (position.x > slideWidth * 0.5 && position.y < slideHeight * 0.3) {
+        asset.positionCategory = 'top-right';
+      } else if (position.x < slideWidth * 0.3 && position.y > slideHeight * 0.7) {
+        asset.positionCategory = 'bottom-left';
+      } else if (position.x > slideWidth * 0.5 && position.y > slideHeight * 0.7) {
+        asset.positionCategory = 'bottom-right';
+      } else {
+        asset.positionCategory = 'center';
+      }
+
+      // Add to logo positions for rule detection
+      analysis.layouts.logoPositions.push({
+        name: filename,
+        position: asset.positionCategory,
+        x: position.x,
+        y: position.y,
+        source: 'master'
+      });
+    }
+
+    // Add to logos (master assets are brand assets)
+    analysis.extractedAssets.logos.push(asset);
+    masterLayout.images.push(asset);
+  }
+
+  // Also extract background images from master
+  const bgMatches = masterXml.matchAll(/<p:bgPr>([\s\S]*?)<\/p:bgPr>/gi);
+  for (const bgMatch of bgMatches) {
+    const bgXml = bgMatch[1];
+    const embedMatch = bgXml.match(/r:embed="(rId\d+)"/);
+
+    if (embedMatch && imageRels[embedMatch[1]]) {
+      const mediaPath = imageRels[embedMatch[1]];
+      const mediaFile = zip.file(mediaPath);
+
+      if (mediaFile) {
+        const filename = mediaPath.split('/').pop();
+        const blob = await mediaFile.async('blob');
+        const dataUrl = await blobToDataUrl(blob);
+
+        analysis.extractedAssets.backgrounds.push({
+          name: filename,
+          data: dataUrl,
+          size: blob.size,
+          type: 'background',
+          source: 'slideMaster',
+          confidence: 0.95
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Extract assets from slide layouts
+ */
+async function extractLayoutAssets(zip, analysis) {
+  const layoutFiles = zip.file(/ppt\/slideLayouts\/slideLayout\d+\.xml/);
+
+  for (const layoutFile of layoutFiles) {
+    const xml = await layoutFile.async('text');
+    const layoutNum = layoutFile.name.match(/slideLayout(\d+)/)?.[1] || '1';
+
+    // Get relationships
+    const relsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
+    if (!relsFile) continue;
+
+    const relsXml = await relsFile.async('text');
+
+    // Find image relationships
+    const imageRels = {};
+    const relMatches = relsXml.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/gi);
+    for (const match of relMatches) {
+      if (match[2].includes('/media/') || match[2].includes('../media/')) {
+        imageRels[match[1]] = match[2].replace('../', 'ppt/');
+      }
+    }
+
+    // Find images in layout
+    const picMatches = xml.matchAll(/<p:pic>([\s\S]*?)<\/p:pic>/gi);
+
+    for (const picMatch of picMatches) {
+      const picXml = picMatch[1];
+      const embedMatch = picXml.match(/r:embed="(rId\d+)"/);
+
+      if (!embedMatch) continue;
+
+      const mediaPath = imageRels[embedMatch[1]];
+      if (!mediaPath) continue;
+
+      // Check if we already have this asset
+      const filename = mediaPath.split('/').pop();
+      if (analysis.extractedAssets.logos.find(a => a.name === filename)) continue;
+
+      const mediaFile = zip.file(mediaPath);
+      if (!mediaFile) continue;
+
+      const ext = filename.split('.').pop().toLowerCase();
+      if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) continue;
+
+      const blob = await mediaFile.async('blob');
+      const dataUrl = await blobToDataUrl(blob);
+      const dimensions = await getImageDimensions(dataUrl);
+
+      // Get position
+      const posMatch = picXml.match(/<a:off x="(\d+)" y="(\d+)"/);
+      const position = posMatch ? {
+        x: emuToPixels(posMatch[1]),
+        y: emuToPixels(posMatch[2])
+      } : null;
+
+      const asset = {
+        name: filename,
+        data: dataUrl,
+        size: blob.size,
+        type: 'logo',
+        source: 'slideLayout',
+        position,
+        dimensions,
+        confidence: 0.85 // High confidence for layout assets
+      };
+
+      // Determine position category
+      if (position && analysis.layouts.slideSize.width > 0) {
+        const slideWidth = analysis.layouts.slideSize.width;
+        const slideHeight = analysis.layouts.slideSize.height;
+
+        if (position.x < slideWidth * 0.3 && position.y < slideHeight * 0.3) {
+          asset.positionCategory = 'top-left';
+        } else if (position.x > slideWidth * 0.5 && position.y < slideHeight * 0.3) {
+          asset.positionCategory = 'top-right';
+        } else if (position.x < slideWidth * 0.3 && position.y > slideHeight * 0.7) {
+          asset.positionCategory = 'bottom-left';
+        } else if (position.x > slideWidth * 0.5 && position.y > slideHeight * 0.7) {
+          asset.positionCategory = 'bottom-right';
+        } else {
+          asset.positionCategory = 'center';
+        }
+
+        analysis.layouts.logoPositions.push({
+          name: filename,
+          position: asset.positionCategory,
+          x: position.x,
+          y: position.y,
+          source: 'layout'
+        });
+      }
+
+      analysis.extractedAssets.logos.push(asset);
+    }
   }
 }
 
@@ -433,13 +675,27 @@ async function parseSlides(zip, analysis) {
 }
 
 /**
- * Extract all media assets
+ * Extract all media assets (skip those already extracted from master/layouts)
  */
 async function extractAllMedia(zip, analysis) {
   const mediaFiles = zip.file(/ppt\/media\/.+/);
 
+  // Get already extracted filenames to avoid duplicates
+  const existingAssets = new Set([
+    ...analysis.extractedAssets.logos.map(a => a.name),
+    ...analysis.extractedAssets.images.map(a => a.name),
+    ...analysis.extractedAssets.icons.map(a => a.name),
+    ...analysis.extractedAssets.backgrounds.map(a => a.name)
+  ]);
+
   for (const media of mediaFiles) {
     const filename = media.name.split('/').pop();
+
+    // Skip if already extracted from master/layout
+    if (existingAssets.has(filename)) {
+      continue;
+    }
+
     const ext = filename.split('.').pop().toLowerCase();
 
     if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'emf', 'wmf'].includes(ext)) {
@@ -458,6 +714,7 @@ async function extractAllMedia(zip, analysis) {
       data: dataUrl,
       size: blob.size,
       type: assetType,
+      source: 'slides',
       dimensions,
       confidence: calculateAssetConfidence(filename, blob.size, dimensions, assetType)
     };
@@ -478,7 +735,7 @@ async function extractAllMedia(zip, analysis) {
     }
   }
 
-  // Sort by confidence
+  // Sort by confidence (master assets should be first due to higher confidence)
   analysis.extractedAssets.logos.sort((a, b) => b.confidence - a.confidence);
   analysis.extractedAssets.images.sort((a, b) => b.confidence - a.confidence);
 }
