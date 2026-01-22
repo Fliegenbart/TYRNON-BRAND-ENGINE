@@ -4097,6 +4097,238 @@ body {
   margin-top: var(--space-xl);
 }
 
+/* Import Mode Toggle */
+.import-mode-toggle {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+  margin-top: var(--space-lg);
+}
+
+.mode-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* Existing Assets Display */
+.existing-assets {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md) !important;
+  margin-bottom: var(--space-lg);
+}
+
+.existing-assets h3 {
+  font-size: 12px !important;
+  margin-bottom: var(--space-sm) !important;
+}
+
+.existing-colors,
+.existing-logos {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.existing-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.color-swatch-small {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.existing-logo-thumb {
+  max-height: 30px;
+  max-width: 60px;
+  object-fit: contain;
+}
+
+/* Additional Colors Checkboxes */
+.additional-colors {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px dashed var(--border);
+}
+
+.additional-colors h4,
+.additional-logos h4 {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: var(--space-md);
+  color: var(--text-secondary);
+}
+
+.color-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.color-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.color-checkbox:hover {
+  border-color: var(--accent);
+}
+
+.color-checkbox.selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.color-checkbox input[type="checkbox"] {
+  display: none;
+}
+
+.color-swatch-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.color-hex-small {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Color Name in Swatch */
+.color-swatch-large .color-name {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 8px;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Additional Logos */
+.additional-logos {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px dashed var(--border);
+}
+
+.logo-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.logo-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logo-checkbox:hover {
+  border-color: var(--accent);
+}
+
+.logo-checkbox.selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.logo-checkbox input[type="checkbox"] {
+  display: none;
+}
+
+.logo-thumb {
+  max-height: 30px;
+  max-width: 60px;
+  object-fit: contain;
+}
+
+.logo-placeholder {
+  padding: var(--space-lg);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Tone of Voice */
+.tone-of-voice {
+  background: var(--bg-secondary);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+}
+
+.tov-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.tov-keyword {
+  padding: 4px 12px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tov-description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.additional-notes {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  background: var(--bg-secondary);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+}
+
 /* Analyzer Upload */
 .analyzer-upload {
   text-align: center;

@@ -39,11 +39,13 @@ const createDefaultBrand = (name = 'Neue Marke') => ({
     secondary: '#1d1d1f',
     accent: '#ff9500',
     background: '#ffffff',
-    text: '#1d1d1f'
+    text: '#1d1d1f',
+    palette: [] // Additional brand colors
   },
   fonts: {
     heading: "'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif",
-    body: "'SF Pro Text', -apple-system, BlinkMacSystemFont, sans-serif"
+    body: "'SF Pro Text', -apple-system, BlinkMacSystemFont, sans-serif",
+    additional: [] // Additional fonts { name, usage, description }
   },
   voice: {
     tone: 'professional',
@@ -52,7 +54,9 @@ const createDefaultBrand = (name = 'Neue Marke') => ({
     dos: '',
     donts: ''
   },
-  logo: null
+  logo: null,
+  logos: [], // Additional logos { dataUrl, name, description }
+  toneOfVoice: null // AI-extracted tone of voice data
 });
 
 export const useBrandStore = create(

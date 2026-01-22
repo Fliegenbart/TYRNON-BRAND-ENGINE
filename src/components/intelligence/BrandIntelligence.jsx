@@ -164,33 +164,62 @@ export default function BrandIntelligence() {
   }, []);
 
   const handleApply = useCallback((selectedData) => {
-    // Apply directly to brand
+    const { importMode = 'add' } = selectedData;
     const updates = {};
 
-    // Colors
+    // Colors - main colors
     if (selectedData.colors) {
+      const existingPalette = brand.colors?.palette || [];
+      const newPaletteColors = selectedData.paletteColors || [];
+
       updates.colors = {
         ...brand.colors,
         primary: selectedData.colors.primary || brand.colors.primary,
         secondary: selectedData.colors.secondary || brand.colors.secondary,
         accent: selectedData.colors.accent || brand.colors.accent,
         background: selectedData.colors.background || brand.colors.background,
-        text: selectedData.colors.text || brand.colors.text
+        text: selectedData.colors.text || brand.colors.text,
+        // Merge or replace palette
+        palette: importMode === 'add'
+          ? [...existingPalette, ...newPaletteColors]
+          : newPaletteColors
       };
     }
 
     // Fonts
     if (selectedData.fonts) {
+      const existingAdditional = brand.fonts?.additional || [];
+      const newAdditionalFonts = selectedData.additionalFonts || [];
+
       updates.fonts = {
         ...brand.fonts,
         heading: selectedData.fonts.heading || brand.fonts.heading,
-        body: selectedData.fonts.body || brand.fonts.body
+        body: selectedData.fonts.body || brand.fonts.body,
+        // Merge or replace additional fonts
+        additional: importMode === 'add'
+          ? [...existingAdditional, ...newAdditionalFonts]
+          : newAdditionalFonts
       };
     }
 
-    // Logo
+    // Logo - primary logo
     if (selectedData.logo) {
       updates.logo = selectedData.logo;
+    }
+
+    // Additional logos
+    const existingLogos = brand.logos || [];
+    const newAdditionalLogos = selectedData.additionalLogos || [];
+
+    if (newAdditionalLogos.length > 0 || importMode === 'replace') {
+      updates.logos = importMode === 'add'
+        ? [...existingLogos, ...newAdditionalLogos]
+        : newAdditionalLogos;
+    }
+
+    // Tone of Voice
+    if (selectedData.toneOfVoice) {
+      updates.toneOfVoice = selectedData.toneOfVoice;
     }
 
     // Update brand in store
@@ -248,6 +277,7 @@ export default function BrandIntelligence() {
         {step === 'preview' && extractedData && (
           <BrandPreview
             extractedData={extractedData}
+            existingBrand={brand}
             onApply={handleApply}
             onCancel={handleCancel}
           />
