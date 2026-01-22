@@ -1,12 +1,22 @@
 import React from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useBrandStore } from '../../stores/brandStore';
+import { useRulesStore } from '../../stores/rulesStore';
 
 export default function BrandOverview() {
   const { brandId } = useParams();
   const navigate = useNavigate();
-  const { getBrandById } = useBrandStore();
+  const { getBrandById, deleteBrand } = useBrandStore();
+  const { clearRules } = useRulesStore();
   const brand = getBrandById(brandId);
+
+  const handleDeleteBrand = async () => {
+    if (confirm(`"${brand.name}" wirklich löschen? Alle Daten und Regeln werden unwiderruflich gelöscht.`)) {
+      await clearRules(brandId);
+      await deleteBrand(brandId);
+      navigate('/');
+    }
+  };
 
   if (!brand) {
     return (
@@ -70,6 +80,13 @@ export default function BrandOverview() {
               <p className="brand-tagline">{brand.voice.tagline}</p>
             )}
           </div>
+          <button
+            className="btn-delete-brand"
+            onClick={handleDeleteBrand}
+            title="Marke löschen"
+          >
+            Marke löschen
+          </button>
         </div>
 
         <div className="brand-token-preview">

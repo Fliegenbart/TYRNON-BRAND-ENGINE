@@ -87,13 +87,45 @@ function parseTheme(xml, analysis) {
   ];
 
   for (const { name, type } of schemeColors) {
-    const regex = new RegExp(`<a:${name}>[\\s\\S]*?<a:srgbClr val="([A-Fa-f0-9]{6})"`, 'i');
-    const match = xml.match(regex);
+    // Try srgbClr first (direct RGB color)
+    let regex = new RegExp(`<a:${name}>\\s*<a:srgbClr val="([A-Fa-f0-9]{6})"`, 'i');
+    let match = xml.match(regex);
+
+    if (!match) {
+      // Try with any content between tags
+      regex = new RegExp(`<a:${name}>[\\s\\S]*?val="([A-Fa-f0-9]{6})"`, 'i');
+      match = xml.match(regex);
+    }
+
+    if (!match) {
+      // Try sysClr (system color like window, windowText)
+      regex = new RegExp(`<a:${name}>\\s*<a:sysClr[^>]*lastClr="([A-Fa-f0-9]{6})"`, 'i');
+      match = xml.match(regex);
+    }
+
     if (match) {
       analysis.theme.colors.push({
         name,
         type,
         value: '#' + match[1].toLowerCase(),
+        source: 'theme'
+      });
+    }
+  }
+
+  // Also extract any standalone srgbClr values as additional colors
+  const allColorsRegex = /val="([A-Fa-f0-9]{6})"/gi;
+  let colorMatch;
+  const seenColors = new Set(analysis.theme.colors.map(c => c.value));
+
+  while ((colorMatch = allColorsRegex.exec(xml)) !== null) {
+    const hex = '#' + colorMatch[1].toLowerCase();
+    if (!seenColors.has(hex) && !isNearWhiteOrBlack(hex)) {
+      seenColors.add(hex);
+      analysis.theme.colors.push({
+        name: 'extracted',
+        type: 'accent',
+        value: hex,
         source: 'theme'
       });
     }
@@ -109,6 +141,33 @@ function parseTheme(xml, analysis) {
   if (minorFontMatch && !minorFontMatch[1].startsWith('+')) {
     analysis.theme.fonts.minor = minorFontMatch[1];
   }
+
+  // If no fonts found in theme, try fontScheme
+  if (!analysis.theme.fonts.major) {
+    const fontSchemeMatch = xml.match(/typeface="([^"+][^"]*)"/i);
+    if (fontSchemeMatch) {
+      analysis.theme.fonts.major = fontSchemeMatch[1];
+    }
+  }
+}
+
+/**
+ * Check if color is near white or black
+ */
+function isNearWhiteOrBlack(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return true;
+  const luminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+  return luminance < 30 || luminance > 225;
+}
+
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
 }
 
 /**
@@ -153,26 +212,36 @@ function parseMasterPatterns(xml, analysis) {
  * Parse individual slides for color usage patterns
  */
 function parseSlidePatterns(xml, analysis) {
-  // Track color usage
-  const rgbRegex = /<a:srgbClr val="([A-Fa-f0-9]{6})"/g;
-  let match;
+  // Track color usage - multiple regex patterns
+  const colorPatterns = [
+    /<a:srgbClr val="([A-Fa-f0-9]{6})"/gi,
+    /val="([A-Fa-f0-9]{6})"/gi,
+    /lastClr="([A-Fa-f0-9]{6})"/gi
+  ];
 
-  while ((match = rgbRegex.exec(xml)) !== null) {
-    const color = '#' + match[1].toLowerCase();
-    if (!analysis.patterns.colorUsage[color]) {
-      analysis.patterns.colorUsage[color] = { frequency: 0, contexts: [] };
-    }
-    analysis.patterns.colorUsage[color].frequency++;
+  for (const rgbRegex of colorPatterns) {
+    let match;
+    while ((match = rgbRegex.exec(xml)) !== null) {
+      const color = '#' + match[1].toLowerCase();
 
-    // Try to detect context (background vs text)
-    const contextBefore = xml.substring(Math.max(0, match.index - 100), match.index);
-    if (contextBefore.includes('solidFill') && contextBefore.includes('spPr')) {
-      if (!analysis.patterns.colorUsage[color].contexts.includes('background')) {
-        analysis.patterns.colorUsage[color].contexts.push('background');
+      // Skip near white/black colors
+      if (isNearWhiteOrBlack(color)) continue;
+
+      if (!analysis.patterns.colorUsage[color]) {
+        analysis.patterns.colorUsage[color] = { frequency: 0, contexts: [] };
       }
-    } else if (contextBefore.includes('rPr') || contextBefore.includes('defRPr')) {
-      if (!analysis.patterns.colorUsage[color].contexts.includes('text')) {
-        analysis.patterns.colorUsage[color].contexts.push('text');
+      analysis.patterns.colorUsage[color].frequency++;
+
+      // Try to detect context (background vs text)
+      const contextBefore = xml.substring(Math.max(0, match.index - 100), match.index);
+      if (contextBefore.includes('solidFill') && contextBefore.includes('spPr')) {
+        if (!analysis.patterns.colorUsage[color].contexts.includes('background')) {
+          analysis.patterns.colorUsage[color].contexts.push('background');
+        }
+      } else if (contextBefore.includes('rPr') || contextBefore.includes('defRPr')) {
+        if (!analysis.patterns.colorUsage[color].contexts.includes('text')) {
+          analysis.patterns.colorUsage[color].contexts.push('text');
+        }
       }
     }
   }
@@ -180,6 +249,7 @@ function parseSlidePatterns(xml, analysis) {
   // Detect spacing values (from position attributes)
   const posRegex = /(?:x|y|cx|cy)="(\d+)"/g;
   const spacings = new Set();
+  let match;
   while ((match = posRegex.exec(xml)) !== null) {
     // Convert EMUs to pixels (914400 EMU = 1 inch = 96 pixels)
     const px = Math.round(parseInt(match[1]) / 914400 * 96);

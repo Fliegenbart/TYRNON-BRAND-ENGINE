@@ -27,9 +27,18 @@ export function analyzePatterns(analyzedAssets) {
   // Merge extracted assets
   const extractedAssets = mergeExtractedAssets(pptx, images);
 
-  // Separate rules by confidence
-  const confirmedRules = rules.filter(r => r.confidence >= 0.7);
-  const needsReview = rules.filter(r => r.confidence >= 0.5 && r.confidence < 0.7);
+  // Separate rules by confidence - lower threshold to catch more rules
+  const confirmedRules = rules.filter(r => r.confidence >= 0.6);
+  const needsReview = rules.filter(r => r.confidence >= 0.3 && r.confidence < 0.6);
+
+  // If we have no rules at all, include all with any confidence
+  if (confirmedRules.length === 0 && needsReview.length === 0 && rules.length > 0) {
+    return {
+      rules: [],
+      needsReview: rules, // Put all rules in review
+      extractedAssets
+    };
+  }
 
   return {
     rules: confirmedRules,
@@ -362,9 +371,11 @@ function isNearWhiteOrBlack(hex) {
 
 function calculateColorConfidence(frequency, sourceCount) {
   // More frequency and more sources = higher confidence
-  const freqScore = Math.min(frequency / 20, 1);
-  const sourceScore = Math.min(sourceCount / 3, 1);
-  return Math.round((freqScore * 0.6 + sourceScore * 0.4) * 100) / 100;
+  // Lower thresholds to be more generous
+  const freqScore = Math.min(frequency / 5, 1); // Was /20, now /5
+  const sourceScore = Math.min(sourceCount / 2, 1); // Was /3, now /2
+  const base = 0.4; // Minimum confidence for any detected color
+  return Math.round((base + (freqScore * 0.4 + sourceScore * 0.2)) * 100) / 100;
 }
 
 function detectColorUsage(sources) {
