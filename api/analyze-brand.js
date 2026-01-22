@@ -99,9 +99,19 @@ export default async function handler(request) {
     if (!response.ok) {
       const errorData = await response.text();
       console.error('Claude API error:', errorData);
+
+      // Parse error for better message
+      let errorMessage = 'Claude API error';
+      try {
+        const parsed = JSON.parse(errorData);
+        errorMessage = parsed.error?.message || parsed.message || errorData;
+      } catch {
+        errorMessage = errorData;
+      }
+
       return new Response(JSON.stringify({
-        error: 'Claude API error',
-        details: response.status
+        error: errorMessage,
+        status: response.status
       }), {
         status: 500,
         headers: corsHeaders(),

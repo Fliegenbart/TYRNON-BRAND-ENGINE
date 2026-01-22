@@ -58,6 +58,7 @@ export async function analyzeWithAI(files, onProgress = () => {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    console.error('API Error:', error);
     throw new Error(error.error || `API Fehler: ${response.status}`);
   }
 
