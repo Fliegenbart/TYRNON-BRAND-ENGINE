@@ -1,10 +1,22 @@
 import React, { useState, useCallback } from 'react';
 
 const acceptedTypes = {
-  'pptx': { icon: 'P', label: 'PowerPoint', accept: '.pptx,.ppt,.potx' },
-  'pdf': { icon: 'D', label: 'PDF', accept: '.pdf' },
-  'image': { icon: 'I', label: 'Bilder', accept: '.png,.jpg,.jpeg,.svg,.webp' }
+  'templates': { icon: 'T', label: 'Templates', accept: '.pptx,.ppt,.potx,.pdf' },
+  'images': { icon: 'I', label: 'Bilder & Logos', accept: '.png,.jpg,.jpeg,.svg,.webp,.gif,.ico' },
+  'fonts': { icon: 'F', label: 'Schriften', accept: '.ttf,.otf,.woff,.woff2' },
+  'tokens': { icon: '{', label: 'Design Tokens', accept: '.json' }
 };
+
+const allAcceptedExtensions = [
+  // Templates
+  'pptx', 'ppt', 'potx', 'pdf',
+  // Images
+  'png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'ico',
+  // Fonts
+  'ttf', 'otf', 'woff', 'woff2',
+  // Design Tokens (Figma, Style Dictionary, etc.)
+  'json'
+];
 
 export default function AnalyzerUpload({ onStartAnalysis }) {
   const [files, setFiles] = useState([]);
@@ -37,7 +49,7 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
   const addFiles = (newFiles) => {
     const validFiles = newFiles.filter(file => {
       const ext = file.name.split('.').pop().toLowerCase();
-      return ['pptx', 'ppt', 'potx', 'pdf', 'png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext);
+      return allAcceptedExtensions.includes(ext);
     });
 
     setFiles(prev => {
@@ -54,16 +66,24 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
 
   const getFileIcon = (filename) => {
     const ext = filename.split('.').pop().toLowerCase();
-    if (ext === 'pptx' || ext === 'ppt' || ext === 'potx') return 'P';
+    if (['pptx', 'ppt', 'potx'].includes(ext)) return 'P';
     if (ext === 'pdf') return 'D';
+    if (['ttf', 'otf', 'woff', 'woff2'].includes(ext)) return 'F';
+    if (['svg'].includes(ext)) return 'S';
+    if (ext === 'json') return '{';
     return 'I';
   };
 
   const getFileType = (filename) => {
     const ext = filename.split('.').pop().toLowerCase();
-    if (ext === 'pptx' || ext === 'ppt') return 'PowerPoint';
+    if (['pptx', 'ppt'].includes(ext)) return 'PowerPoint';
     if (ext === 'potx') return 'PowerPoint Template';
     if (ext === 'pdf') return 'PDF';
+    if (['ttf', 'otf'].includes(ext)) return 'Schriftart';
+    if (['woff', 'woff2'].includes(ext)) return 'Web-Schrift';
+    if (ext === 'svg') return 'SVG Vektor';
+    if (ext === 'ico') return 'Favicon';
+    if (ext === 'json') return 'Design Tokens';
     return 'Bild';
   };
 
@@ -79,16 +99,27 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
     }
   };
 
+  // Count files by type
+  const fileCounts = {
+    templates: files.filter(f => ['pptx', 'ppt', 'potx', 'pdf'].includes(f.name.split('.').pop().toLowerCase())).length,
+    images: files.filter(f => ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'ico'].includes(f.name.split('.').pop().toLowerCase())).length,
+    fonts: files.filter(f => ['ttf', 'otf', 'woff', 'woff2'].includes(f.name.split('.').pop().toLowerCase())).length,
+    tokens: files.filter(f => f.name.split('.').pop().toLowerCase() === 'json').length
+  };
+
   return (
     <div className="analyzer-upload">
       <div className="upload-intro">
         <div className="upload-icon-large">
-          <span>AI</span>
+          <span>+</span>
         </div>
-        <h2>Brand-Assets analysieren</h2>
+        <h2>Brand-Assets hochladen</h2>
         <p>
-          Lade deine bestehenden Brand-Materialien hoch und wir extrahieren automatisch
-          Farben, Schriften, Logos und Stilregeln.
+          Lade deine Logos, Bilder, Schriften und Templates hoch.
+          Wir extrahieren automatisch Farben, Schriften und Stilregeln.
+        </p>
+        <p className="upload-hint-figma">
+          Figma-Nutzer: Exportiere deine Assets als SVG/PNG und Design Tokens als JSON
         </p>
       </div>
 
@@ -106,14 +137,14 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
               <input
                 type="file"
                 multiple
-                accept=".pptx,.ppt,.potx,.pdf,.png,.jpg,.jpeg,.svg,.webp"
+                accept={allAcceptedExtensions.map(e => '.' + e).join(',')}
                 onChange={handleFileSelect}
                 hidden
               />
             </label>
           </p>
           <p className="dropzone-hint">
-            PowerPoint (PPTX/POTX), PDF, PNG, JPG, SVG
+            Bilder, Logos, Schriften, PowerPoint, PDF
           </p>
         </div>
       </div>
@@ -138,6 +169,12 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
         <div className="upload-file-list">
           <div className="file-list-header">
             <h3>Ausgewählte Dateien ({files.length})</h3>
+            <div className="file-counts">
+              {fileCounts.templates > 0 && <span className="file-count-badge">{fileCounts.templates} Templates</span>}
+              {fileCounts.images > 0 && <span className="file-count-badge">{fileCounts.images} Bilder</span>}
+              {fileCounts.fonts > 0 && <span className="file-count-badge">{fileCounts.fonts} Schriften</span>}
+              {fileCounts.tokens > 0 && <span className="file-count-badge">{fileCounts.tokens} Tokens</span>}
+            </div>
             <button
               className="btn-text"
               onClick={() => setFiles([])}
@@ -171,7 +208,7 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
             onClick={handleStart}
           >
             <span className="btn-icon">*</span>
-            Analyse starten
+            {fileCounts.templates > 0 ? 'Analyse starten' : 'Assets hinzufügen'}
           </button>
         </div>
       )}

@@ -9,21 +9,21 @@
  * @returns {Object} Rules and extracted assets
  */
 export function analyzePatterns(analyzedAssets) {
-  const { pptx = [], pdf = [], images = [] } = analyzedAssets;
+  const { pptx = [], pdf = [], images = [], fonts = [], tokens = [] } = analyzedAssets;
 
   const rules = [];
 
-  // Detect color rules
-  rules.push(...detectColorRules(pptx, pdf, images));
+  // Detect color rules (including from design tokens)
+  rules.push(...detectColorRules(pptx, pdf, images, tokens));
 
-  // Detect typography rules
-  rules.push(...detectTypographyRules(pptx));
+  // Detect typography rules (including uploaded fonts and tokens)
+  rules.push(...detectTypographyRules(pptx, fonts, tokens));
 
   // Detect font size rules
   rules.push(...detectFontSizeRules(pptx));
 
-  // Detect spacing/grid rules
-  rules.push(...detectSpacingRules(pptx));
+  // Detect spacing/grid rules (including from tokens)
+  rules.push(...detectSpacingRules(pptx, tokens));
 
   // Detect layout rules
   rules.push(...detectLayoutRules(pptx));
@@ -31,8 +31,8 @@ export function analyzePatterns(analyzedAssets) {
   // Detect logo rules
   rules.push(...detectLogoRules(pptx));
 
-  // Merge extracted assets
-  const extractedAssets = mergeExtractedAssets(pptx, images);
+  // Merge extracted assets (including fonts)
+  const extractedAssets = mergeExtractedAssets(pptx, images, fonts);
 
   // Separate rules by confidence
   const confirmedRules = rules.filter(r => r.confidence >= 0.6);
@@ -57,10 +57,31 @@ export function analyzePatterns(analyzedAssets) {
 /**
  * Detect color rules from all sources
  */
-function detectColorRules(pptxResults, pdfResults, imageResults) {
+function detectColorRules(pptxResults, pdfResults, imageResults, tokenResults = []) {
   const rules = [];
   const colorFrequency = {};
   const colorSources = {};
+
+  // Add colors from design tokens (highest priority)
+  for (const tokens of tokenResults) {
+    if (!tokens.valid) continue;
+
+    for (const color of tokens.colors || []) {
+      const hex = color.value;
+      if (!hex || !hex.startsWith('#')) continue;
+
+      const normalizedHex = hex.toLowerCase();
+      // Design tokens get very high weight
+      colorFrequency[normalizedHex] = (colorFrequency[normalizedHex] || 0) + 20;
+      colorSources[normalizedHex] = colorSources[normalizedHex] || [];
+      colorSources[normalizedHex].push({
+        file: tokens.source,
+        location: 'design-tokens',
+        name: color.name,
+        description: color.description
+      });
+    }
+  }
 
   // Aggregate colors from PPTX themes
   for (const pptx of pptxResults) {
@@ -203,7 +224,7 @@ function detectColorRules(pptxResults, pdfResults, imageResults) {
 /**
  * Detect typography rules
  */
-function detectTypographyRules(pptxResults) {
+function detectTypographyRules(pptxResults, fontResults = [], tokenResults = []) {
   const rules = [];
 
   // Collect fonts from all PPTX files
@@ -221,6 +242,35 @@ function detectTypographyRules(pptxResults) {
     for (const font of pptx.theme?.fonts?.all || []) {
       if (font.name && !allFonts.find(f => f.name === font.name)) {
         allFonts.push({ ...font, source: pptx.source });
+      }
+    }
+  }
+
+  // Add uploaded font files as brand fonts
+  for (const font of fontResults) {
+    if (font.name && !allFonts.find(f => f.name === font.name)) {
+      allFonts.push({
+        name: font.name,
+        usage: 'uploaded',
+        source: font.source,
+        dataUrl: font.dataUrl,
+        format: font.format
+      });
+    }
+  }
+
+  // Add fonts from design tokens
+  for (const tokens of tokenResults) {
+    if (!tokens.valid) continue;
+
+    for (const font of tokens.fonts || []) {
+      if (font.value && !allFonts.find(f => f.name === font.value)) {
+        allFonts.push({
+          name: font.value,
+          usage: font.name?.toLowerCase().includes('heading') ? 'heading' :
+                 font.name?.toLowerCase().includes('body') ? 'body' : 'token',
+          source: tokens.source
+        });
       }
     }
   }
@@ -354,13 +404,25 @@ function detectFontSizeRules(pptxResults) {
 /**
  * Detect spacing/grid rules
  */
-function detectSpacingRules(pptxResults) {
+function detectSpacingRules(pptxResults, tokenResults = []) {
   const rules = [];
   const allSpacings = [];
 
   for (const pptx of pptxResults) {
     allSpacings.push(...(pptx.spacing?.commonSpacings || []));
     allSpacings.push(...(pptx.patterns?.detectedGridValues || []));
+  }
+
+  // Add spacing from design tokens
+  for (const tokens of tokenResults) {
+    if (!tokens.valid) continue;
+
+    for (const spacing of tokens.spacing || []) {
+      const value = parseSpacingValue(spacing.value);
+      if (value > 0) {
+        allSpacings.push(value);
+      }
+    }
   }
 
   if (allSpacings.length === 0) return rules;
@@ -540,12 +602,13 @@ function detectLogoRules(pptxResults) {
 /**
  * Merge extracted assets from all sources
  */
-function mergeExtractedAssets(pptxResults, imageResults) {
+function mergeExtractedAssets(pptxResults, imageResults, fontResults = []) {
   const assets = {
     logos: [],
     images: [],
     icons: [],
-    backgrounds: []
+    backgrounds: [],
+    fonts: []
   };
 
   // From PPTX
@@ -568,9 +631,21 @@ function mergeExtractedAssets(pptxResults, imageResults) {
     }
   }
 
+  // From uploaded fonts
+  for (const font of fontResults) {
+    assets.fonts.push({
+      name: font.name,
+      source: font.source,
+      format: font.format,
+      dataUrl: font.dataUrl,
+      confidence: font.confidence || 0.9
+    });
+  }
+
   // Sort by confidence
   assets.logos.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
   assets.images.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  assets.fonts.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
   return assets;
 }
@@ -581,6 +656,29 @@ function mergeExtractedAssets(pptxResults, imageResults) {
 
 function generateId() {
   return 'rule-' + Math.random().toString(36).substring(2, 9);
+}
+
+function parseSpacingValue(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+
+  // Parse px values
+  const pxMatch = value.match(/^([\d.]+)px$/);
+  if (pxMatch) return parseFloat(pxMatch[1]);
+
+  // Parse rem values (assume 16px base)
+  const remMatch = value.match(/^([\d.]+)rem$/);
+  if (remMatch) return parseFloat(remMatch[1]) * 16;
+
+  // Parse em values
+  const emMatch = value.match(/^([\d.]+)em$/);
+  if (emMatch) return parseFloat(emMatch[1]) * 16;
+
+  // Parse plain numbers
+  const num = parseFloat(value);
+  if (!isNaN(num)) return num;
+
+  return 0;
 }
 
 function isNearWhiteOrBlack(hex) {

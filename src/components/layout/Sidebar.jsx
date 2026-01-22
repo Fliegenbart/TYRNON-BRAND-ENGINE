@@ -51,7 +51,7 @@ export default function Sidebar({ brands, activeBrandId, currentPath, onLogout }
     { path: `/brand/${activeBrandId}`, label: 'Overview', icon: 'O' },
     { path: `/brand/${activeBrandId}/tokens`, label: 'Tokens', icon: 'T' },
     { path: `/brand/${activeBrandId}/assets`, label: 'Assets', icon: 'A' },
-    { path: `/brand/${activeBrandId}/intelligence`, label: 'Intelligence', icon: 'I' },
+    { path: `/brand/${activeBrandId}/intelligence`, label: 'Upload', icon: '↑' },
     { path: `/brand/${activeBrandId}/campaigns`, label: 'Campaigns', icon: 'C' },
     { path: `/brand/${activeBrandId}/exports`, label: 'Exports', icon: 'E' },
   ] : [];

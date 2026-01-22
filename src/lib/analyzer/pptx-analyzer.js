@@ -357,9 +357,22 @@ async function extractMasterAssets(zip, masterNum, masterXml, analysis, masterLa
       continue;
     }
 
+    let dataUrl;
+    let dimensions;
+    let isSvg = ext === 'svg';
+
+    if (isSvg) {
+      // Handle SVG files specially - read as text
+      const svgText = await mediaFile.async('text');
+      dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+      dimensions = getSvgDimensions(svgText);
+    } else {
+      const blob = await mediaFile.async('blob');
+      dataUrl = await blobToDataUrl(blob);
+      dimensions = await getImageDimensions(dataUrl);
+    }
+
     const blob = await mediaFile.async('blob');
-    const dataUrl = await blobToDataUrl(blob);
-    const dimensions = await getImageDimensions(dataUrl);
 
     // Assets in slide master are very likely logos or brand elements
     const asset = {
@@ -370,6 +383,7 @@ async function extractMasterAssets(zip, masterNum, masterXml, analysis, masterLa
       source: 'slideMaster',
       position,
       dimensions: dimensions || size,
+      isVector: isSvg || ext === 'emf' || ext === 'wmf',
       confidence: 0.9 // High confidence for master assets
     };
 
@@ -478,11 +492,23 @@ async function extractLayoutAssets(zip, analysis) {
       if (!mediaFile) continue;
 
       const ext = filename.split('.').pop().toLowerCase();
-      if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) continue;
+      if (!['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'emf', 'wmf'].includes(ext)) continue;
+
+      let dataUrl;
+      let dimensions;
+      let isSvg = ext === 'svg';
+
+      if (isSvg) {
+        const svgText = await mediaFile.async('text');
+        dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+        dimensions = getSvgDimensions(svgText);
+      } else {
+        const blob = await mediaFile.async('blob');
+        dataUrl = await blobToDataUrl(blob);
+        dimensions = await getImageDimensions(dataUrl);
+      }
 
       const blob = await mediaFile.async('blob');
-      const dataUrl = await blobToDataUrl(blob);
-      const dimensions = await getImageDimensions(dataUrl);
 
       // Get position
       const posMatch = picXml.match(/<a:off x="(\d+)" y="(\d+)"/);
@@ -499,6 +525,7 @@ async function extractLayoutAssets(zip, analysis) {
         source: 'slideLayout',
         position,
         dimensions,
+        isVector: isSvg || ext === 'emf' || ext === 'wmf',
         confidence: 0.85 // High confidence for layout assets
       };
 
@@ -703,10 +730,21 @@ async function extractAllMedia(zip, analysis) {
     }
 
     const blob = await media.async('blob');
-    const dataUrl = await blobToDataUrl(blob);
+    let dataUrl;
+    let isSvg = false;
+
+    // Special handling for SVG files
+    if (ext === 'svg') {
+      // Read SVG as text first to ensure proper handling
+      const svgText = await media.async('text');
+      dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+      isSvg = true;
+    } else {
+      dataUrl = await blobToDataUrl(blob);
+    }
 
     // Analyze image properties
-    const dimensions = await getImageDimensions(dataUrl);
+    const dimensions = isSvg ? await getSvgDimensions(await media.async('text')) : await getImageDimensions(dataUrl);
     const assetType = classifyImage(filename, blob.size, dimensions);
 
     const asset = {
@@ -716,6 +754,7 @@ async function extractAllMedia(zip, analysis) {
       type: assetType,
       source: 'slides',
       dimensions,
+      isVector: isSvg || ext === 'emf' || ext === 'wmf',
       confidence: calculateAssetConfidence(filename, blob.size, dimensions, assetType)
     };
 
@@ -735,9 +774,117 @@ async function extractAllMedia(zip, analysis) {
     }
   }
 
+  // Also look for SVG files that might be stored with alternate extensions
+  // PowerPoint sometimes stores SVG data inside image1.svg.png or similar
+  await extractEmbeddedSvgs(zip, analysis, existingAssets);
+
   // Sort by confidence (master assets should be first due to higher confidence)
   analysis.extractedAssets.logos.sort((a, b) => b.confidence - a.confidence);
   analysis.extractedAssets.images.sort((a, b) => b.confidence - a.confidence);
+}
+
+/**
+ * Look for embedded SVG data in various locations
+ */
+async function extractEmbeddedSvgs(zip, analysis, existingAssets) {
+  // Check for SVG stored in different locations
+  const possibleSvgLocations = [
+    /ppt\/media\/.*\.svg$/i,
+    /ppt\/embeddings\/.*\.svg$/i,
+    /docProps\/.*\.svg$/i
+  ];
+
+  for (const pattern of possibleSvgLocations) {
+    const svgFiles = zip.file(pattern);
+
+    for (const svgFile of svgFiles) {
+      const filename = svgFile.name.split('/').pop();
+      if (existingAssets.has(filename)) continue;
+
+      try {
+        const svgText = await svgFile.async('text');
+
+        // Verify it's actual SVG content
+        if (!svgText.includes('<svg') && !svgText.includes('<?xml')) continue;
+
+        const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+        const dimensions = await getSvgDimensions(svgText);
+
+        const asset = {
+          name: filename,
+          data: dataUrl,
+          size: svgText.length,
+          type: 'logo', // SVGs are typically logos
+          source: svgFile.name.includes('embeddings') ? 'embedded' : 'media',
+          dimensions,
+          isVector: true,
+          confidence: 0.85
+        };
+
+        analysis.extractedAssets.logos.push(asset);
+        existingAssets.add(filename);
+      } catch (e) {
+        console.warn('Failed to extract SVG:', filename, e);
+      }
+    }
+  }
+
+  // Check for svgBlip references in slide XML (Office 2019+ feature)
+  const slideFiles = zip.file(/ppt\/slides\/slide\d+\.xml/);
+
+  for (const slideFile of slideFiles) {
+    const xml = await slideFile.async('text');
+
+    // Look for asvg:svgBlip references (modern SVG embedding)
+    const svgBlipMatches = xml.matchAll(/asvg:svgBlip[^>]*r:embed="(rId\d+)"/gi);
+
+    for (const match of svgBlipMatches) {
+      const relId = match[1];
+      const slideNum = slideFile.name.match(/slide(\d+)/)?.[1];
+
+      // Get the relationship file
+      const relsFile = zip.file(`ppt/slides/_rels/slide${slideNum}.xml.rels`);
+      if (!relsFile) continue;
+
+      const relsXml = await relsFile.async('text');
+      const targetMatch = relsXml.match(new RegExp(`Id="${relId}"[^>]*Target="([^"]+)"`, 'i'));
+
+      if (targetMatch) {
+        let svgPath = targetMatch[1];
+        if (svgPath.startsWith('../')) {
+          svgPath = 'ppt/' + svgPath.substring(3);
+        }
+
+        const svgFile = zip.file(svgPath);
+        if (svgFile) {
+          const filename = svgPath.split('/').pop();
+          if (existingAssets.has(filename)) continue;
+
+          try {
+            const svgText = await svgFile.async('text');
+            const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+            const dimensions = await getSvgDimensions(svgText);
+
+            const asset = {
+              name: filename,
+              data: dataUrl,
+              size: svgText.length,
+              type: 'logo',
+              source: 'svgBlip',
+              dimensions,
+              isVector: true,
+              confidence: 0.9
+            };
+
+            analysis.extractedAssets.logos.push(asset);
+            existingAssets.add(filename);
+          } catch (e) {
+            console.warn('Failed to extract svgBlip:', filename, e);
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -952,6 +1099,37 @@ function getImageDimensions(dataUrl) {
     img.onerror = () => resolve({ width: 0, height: 0 });
     img.src = dataUrl;
   });
+}
+
+/**
+ * Extract dimensions from SVG content
+ */
+function getSvgDimensions(svgText) {
+  try {
+    // Try to get width/height from SVG attributes
+    const widthMatch = svgText.match(/width=["']?(\d+(?:\.\d+)?)(px|pt|em|%)?["']?/i);
+    const heightMatch = svgText.match(/height=["']?(\d+(?:\.\d+)?)(px|pt|em|%)?["']?/i);
+
+    if (widthMatch && heightMatch) {
+      return {
+        width: parseFloat(widthMatch[1]),
+        height: parseFloat(heightMatch[1])
+      };
+    }
+
+    // Try viewBox
+    const viewBoxMatch = svgText.match(/viewBox=["']?\s*[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)["']?/i);
+    if (viewBoxMatch) {
+      return {
+        width: parseFloat(viewBoxMatch[1]),
+        height: parseFloat(viewBoxMatch[2])
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to parse SVG dimensions');
+  }
+
+  return { width: 100, height: 100 }; // Default
 }
 
 export default analyzePptx;

@@ -47,19 +47,132 @@ export default function AssetGenerator() {
     updateAssetContent(brandId, selectedAsset, newContent);
   };
 
+  // Smart parser for AI-generated content
   const handleApplyAIContent = (generatedText) => {
-    const lines = generatedText.split('\n').filter(l => l.trim());
-    const headline = lines.find(l => l.toLowerCase().includes('headline'))
-      ?.replace(/.*?[:：]\s*/, '').replace(/\*\*/g, '') || '';
+    const extractField = (text, patterns) => {
+      for (const pattern of patterns) {
+        const regex = new RegExp(`\\*\\*${pattern}[:\\*]*\\**\\s*(.+?)(?=\\n\\n|\\n\\*\\*|$)`, 'is');
+        const match = text.match(regex);
+        if (match) {
+          return match[1].trim().replace(/\*\*/g, '').replace(/^["„]|[""]$/g, '');
+        }
+      }
+      return null;
+    };
+
+    const extractSection = (text, sectionNames) => {
+      for (const name of sectionNames) {
+        const regex = new RegExp(`#\\s*${name}[\\s\\S]*?(?=\\n#|$)`, 'i');
+        const match = text.match(regex);
+        if (match) return match[0];
+      }
+      return null;
+    };
+
+    const extractBullets = (text, patterns) => {
+      for (const pattern of patterns) {
+        const regex = new RegExp(`\\*\\*${pattern}[:\\*]*\\**\\s*([\\s\\S]*?)(?=\\n\\n\\*\\*|\\n#|$)`, 'i');
+        const match = text.match(regex);
+        if (match) {
+          const bullets = match[1].match(/[•\-]\s*(.+)/g);
+          if (bullets) {
+            return bullets.map(b => b.replace(/^[•\-]\s*/, '').trim());
+          }
+        }
+      }
+      return null;
+    };
+
+    let newFields = { ...content.fields };
+
+    // Asset-specific parsing
+    switch (selectedAsset) {
+      case 'website': {
+        const heroSection = extractSection(generatedText, ['HERO-BEREICH', 'HERO']);
+        const headline = extractField(generatedText, ['Headline', 'Überschrift'])
+          || extractField(heroSection || '', ['Headline']);
+        const subline = extractField(generatedText, ['Subline', 'Untertitel', 'Beschreibung'])
+          || extractField(heroSection || '', ['Subline']);
+        const cta = extractField(generatedText, ['CTA', 'Button', 'Call-to-Action']);
+
+        if (headline) newFields.headline = { value: headline };
+        if (subline) newFields.subline = { value: subline };
+        if (cta) newFields.cta = { value: cta };
+        break;
+      }
+
+      case 'social': {
+        const hook = extractField(generatedText, ['Hook', 'Headline']);
+        const hashtags = extractField(generatedText, ['Hashtags', 'Tags']);
+
+        if (hook) newFields.headline = { value: hook };
+        if (hashtags) newFields.hashtags = { value: hashtags };
+        break;
+      }
+
+      case 'presentation': {
+        const titleSection = extractSection(generatedText, ['SLIDE 1', 'TITEL']);
+        const title = extractField(titleSection || generatedText, ['Präsentationstitel', 'Titel'])
+          || generatedText.match(/\*\*(.+?)\*\*/)?.[1];
+        const subtitle = extractField(generatedText, ['Untertitel', 'Tagline', 'Subtitle']);
+
+        if (title) newFields.title = { value: title };
+        if (subtitle) newFields.subtitle = { value: subtitle };
+        break;
+      }
+
+      case 'flyer': {
+        const headline = extractField(generatedText, ['Headline', 'Überschrift']);
+        const description = extractField(generatedText, ['Einleitung', 'Beschreibung', 'Text']);
+        const cta = extractField(generatedText, ['CTA', 'Eyecatcher', 'Button']);
+        const benefits = extractBullets(generatedText, ['Benefits', 'Vorteile', 'Key Benefits']);
+
+        if (headline) newFields.headline = { value: headline };
+        if (description) newFields.description = { value: description };
+        if (cta) newFields.cta = { value: cta };
+        if (benefits) newFields.details = { value: benefits.join('\n• ') };
+        break;
+      }
+
+      case 'email': {
+        const subject = extractField(generatedText, ['Betreff', 'Betreffzeile', 'Subject']);
+        const preheader = extractField(generatedText, ['Preheader', 'Vorschau']);
+        const greeting = extractField(generatedText, ['Anrede', 'Greeting']);
+        const cta = extractField(generatedText, ['CTA-BUTTON', 'Button-Text', 'CTA']);
+
+        // Extract main body (everything between greeting and signature)
+        const bodyMatch = generatedText.match(/(?:Hallo|Sehr geehrte)[,\s\S]*?(?=\n\nMit|$)/i);
+        const body = bodyMatch ? bodyMatch[0].replace(/^\*\*.*?\*\*\s*/gm, '').trim() : null;
+
+        if (subject) newFields.subject = { value: subject };
+        if (preheader) newFields.preheader = { value: preheader };
+        if (greeting) newFields.greeting = { value: greeting };
+        if (body) newFields.body = { value: body };
+        if (cta) newFields.cta = { value: cta };
+        break;
+      }
+
+      case 'businesscard': {
+        const title = extractField(generatedText, ['Position', 'Titel']);
+        const description = extractField(generatedText, ['Beschreibung', 'Tätigkeit']);
+        const motto = extractField(generatedText, ['Motto', 'Slogan', 'Tagline']);
+
+        if (title) newFields.title = { value: title };
+        if (motto) newFields.name = { value: motto }; // Use motto as a placeholder suggestion
+        break;
+      }
+    }
+
+    // Store raw content for reference
+    newFields._rawContent = { value: generatedText };
 
     handleContentChange({
       ...content,
-      fields: {
-        ...content.fields,
-        headline: { value: headline || lines[0]?.replace(/^\d+\.\s*/, '').replace(/\*\*/g, '') || '' },
-        body: { value: generatedText }
-      }
+      fields: newFields
     });
+
+    // Switch to content tab to show editable fields
+    setActiveToolTab('content');
   };
 
   return (
@@ -100,11 +213,24 @@ export default function AssetGenerator() {
           <div className="preview-frame-wrapper">
             <div className="preview-frame">
               {PreviewComponent && (
-                <PreviewComponent brand={brand} content={content} />
+                <PreviewComponent
+                  brand={brand}
+                  content={content}
+                  onFieldChange={(field, value) => {
+                    handleContentChange({
+                      ...content,
+                      fields: {
+                        ...content.fields,
+                        [field]: { value }
+                      }
+                    });
+                  }}
+                />
               )}
             </div>
             <div className="preview-label">
               {assetTypes.find(a => a.id === selectedAsset)?.name} Preview
+              <span className="preview-hint">Klicke auf Texte zum Bearbeiten</span>
             </div>
           </div>
         </main>
