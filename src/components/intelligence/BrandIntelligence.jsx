@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useBrandStore } from '../../stores/brandStore';
 import { analyzeFiles } from '../../lib/analyzer/index.js';
 import { aggregateExtraction } from '../../lib/analyzer/aggregator.js';
+import { analyzeWithAI } from '../../lib/analyzer/ai-analyzer.js';
 import AnalyzerUpload from './AnalyzerUpload';
 import AnalysisProgress from './AnalysisProgress';
 import BrandPreview from './BrandPreview';
@@ -26,33 +27,71 @@ export default function BrandIntelligence() {
     setProgress(0);
     setError(null);
 
+    // Separate files by type
+    const pptxFiles = files.filter(f => f.name.toLowerCase().endsWith('.pptx'));
+    const aiFiles = files.filter(f =>
+      f.type === 'application/pdf' ||
+      f.type.startsWith('image/') ||
+      f.name.toLowerCase().endsWith('.pdf')
+    );
+
     try {
-      setProgressMessage('Dateien werden analysiert...');
+      let aggregated = { colors: [], fonts: [], logos: [] };
 
-      const results = await analyzeFiles(files, (p) => {
-        setProgress(p);
-        if (p < 30) setProgressMessage('Extrahiere Farben...');
-        else if (p < 60) setProgressMessage('Suche Logos und Schriften...');
-        else if (p < 90) setProgressMessage('Bereite Vorschau vor...');
-        else setProgressMessage('Fertig!');
-      });
+      // Use AI analysis for PDFs and images (much better at reading brand guidelines)
+      if (aiFiles.length > 0) {
+        setProgressMessage('KI analysiert Brand-Dokumente...');
 
-      // Use aggregator to simplify results for preview
-      const aggregated = aggregateExtraction({
-        pptx: results.analysis?.pptx || [],
-        pdf: results.analysis?.pdf || [],
-        images: results.analysis?.images || [],
-        fonts: results.analysis?.fonts || []
-      });
+        const aiResults = await analyzeWithAI(aiFiles, (p) => {
+          setProgress(p * 0.7); // 0-70% for AI analysis
+          if (p < 30) setProgressMessage('Dokumente werden gelesen...');
+          else if (p < 70) setProgressMessage('KI extrahiert Brand-Elemente...');
+          else setProgressMessage('Ergebnisse werden verarbeitet...');
+        });
 
-      // Add extracted logos from pattern engine results
-      if (results.extractedAssets?.logos?.length > 0) {
-        aggregated.logos = [
-          ...aggregated.logos,
-          ...results.extractedAssets.logos.filter(l => l.dataUrl || l.data)
-        ];
+        // Merge AI results
+        aggregated.colors = [...aggregated.colors, ...aiResults.colors];
+        aggregated.fonts = [...aggregated.fonts, ...aiResults.fonts];
+        aggregated.toneOfVoice = aiResults.toneOfVoice;
+        aggregated.additionalNotes = aiResults.additionalNotes;
       }
 
+      // Use basic analyzer for PPTX (good for theme extraction)
+      if (pptxFiles.length > 0) {
+        setProgressMessage('PPTX-Themes werden extrahiert...');
+
+        const results = await analyzeFiles(pptxFiles, (p) => {
+          setProgress(70 + p * 0.3); // 70-100% for PPTX
+        });
+
+        const pptxData = aggregateExtraction({
+          pptx: results.analysis?.pptx || [],
+          pdf: [],
+          images: [],
+          fonts: results.analysis?.fonts || []
+        });
+
+        // Merge PPTX results
+        aggregated.colors = [...aggregated.colors, ...pptxData.colors];
+        aggregated.fonts = [...aggregated.fonts, ...pptxData.fonts];
+
+        // Add logos from PPTX
+        if (results.extractedAssets?.logos?.length > 0) {
+          aggregated.logos = [
+            ...aggregated.logos,
+            ...results.extractedAssets.logos.filter(l => l.dataUrl || l.data)
+          ];
+        }
+        if (pptxData.logos?.length > 0) {
+          aggregated.logos = [...aggregated.logos, ...pptxData.logos];
+        }
+      }
+
+      // Deduplicate colors by similarity
+      aggregated.colors = deduplicateColors(aggregated.colors);
+
+      setProgress(100);
+      setProgressMessage('Fertig!');
       setExtractedData(aggregated);
       setStep('preview');
 
@@ -62,6 +101,41 @@ export default function BrandIntelligence() {
       setStep('upload');
     }
   }, []);
+
+  // Helper to deduplicate similar colors
+  const deduplicateColors = (colors) => {
+    const unique = [];
+    for (const color of colors) {
+      const isDuplicate = unique.some(c => {
+        if (!c.hex || !color.hex) return false;
+        return colorDistance(c.hex, color.hex) < 20;
+      });
+      if (!isDuplicate) {
+        unique.push(color);
+      }
+    }
+    return unique;
+  };
+
+  const colorDistance = (hex1, hex2) => {
+    const rgb1 = hexToRgb(hex1);
+    const rgb2 = hexToRgb(hex2);
+    if (!rgb1 || !rgb2) return Infinity;
+    return Math.sqrt(
+      Math.pow(rgb1.r - rgb2.r, 2) +
+      Math.pow(rgb1.g - rgb2.g, 2) +
+      Math.pow(rgb1.b - rgb2.b, 2)
+    );
+  };
+
+  const hexToRgb = (hex) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  };
 
   const handleFigmaAnalysis = useCallback((analysis) => {
     // Convert Figma analysis to simple format for preview
