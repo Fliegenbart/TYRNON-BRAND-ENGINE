@@ -3,6 +3,17 @@
 // Sends documents to serverless function for analysis
 // ============================================
 
+import * as pdfjsLib from 'pdfjs-dist';
+import { PDFDocument } from 'pdf-lib';
+
+// Set worker path for pdf.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+// Max file size for API (4MB to be safe)
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
+// Max pages to extract from large PDFs
+const MAX_PDF_PAGES = 10;
+
 /**
  * Analyze files using Claude AI
  * @param {File[]} files - Array of files to analyze
@@ -19,15 +30,16 @@ export async function analyzeWithAI(files, onProgress = () => {}) {
     const file = files[i];
     onProgress(10 + (i / files.length) * 30);
 
-    const base64 = await fileToBase64(file);
-
-    if (file.type === 'application/pdf') {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      // Handle PDFs - slice if too large
+      const pdfData = await processPdf(file, onProgress);
       preparedFiles.push({
         type: 'document',
-        data: base64,
+        data: pdfData,
         name: file.name
       });
     } else if (file.type.startsWith('image/')) {
+      const base64 = await fileToBase64(file);
       preparedFiles.push({
         type: 'image',
         data: base64,
@@ -67,6 +79,57 @@ export async function analyzeWithAI(files, onProgress = () => {}) {
 
   // Transform Claude's response to our format
   return transformToPreviewFormat(brandData);
+}
+
+/**
+ * Process PDF - slice to first N pages if too large
+ */
+async function processPdf(file, onProgress) {
+  const arrayBuffer = await file.arrayBuffer();
+
+  // Check if file is small enough
+  if (file.size <= MAX_FILE_SIZE) {
+    // Convert directly to base64
+    return arrayBufferToBase64(arrayBuffer);
+  }
+
+  // File is too large - extract first N pages
+  console.log(`PDF too large (${(file.size / 1024 / 1024).toFixed(1)}MB), extracting first ${MAX_PDF_PAGES} pages...`);
+
+  try {
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const totalPages = pdfDoc.getPageCount();
+    const pagesToKeep = Math.min(totalPages, MAX_PDF_PAGES);
+
+    // Create new PDF with only first pages
+    const newPdf = await PDFDocument.create();
+    const pages = await newPdf.copyPages(pdfDoc, Array.from({ length: pagesToKeep }, (_, i) => i));
+
+    for (const page of pages) {
+      newPdf.addPage(page);
+    }
+
+    const newPdfBytes = await newPdf.save();
+    console.log(`Reduced PDF from ${totalPages} to ${pagesToKeep} pages (${(newPdfBytes.length / 1024 / 1024).toFixed(1)}MB)`);
+
+    return arrayBufferToBase64(newPdfBytes);
+  } catch (err) {
+    console.error('PDF slicing failed, trying original:', err);
+    // Fallback to original (might fail with 413)
+    return arrayBufferToBase64(arrayBuffer);
+  }
+}
+
+/**
+ * Convert ArrayBuffer to base64 string
+ */
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 /**
