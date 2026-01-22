@@ -111,6 +111,11 @@ export default function AIStudio({ brand, selectedAsset, onApplyContent }) {
 
       const text = await generateCompleteAsset(brand, selectedAsset, briefing, combinedContent || null);
       setGeneratedText(text);
+
+      // Auto-apply to preview
+      if (onApplyContent && text) {
+        onApplyContent(text);
+      }
     } catch (err) {
       setError(err.message);
     }
