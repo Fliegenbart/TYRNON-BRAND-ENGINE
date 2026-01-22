@@ -1,5 +1,6 @@
 // ============================================
 // PATTERN ENGINE - Generate Brand Rules from Analysis
+// Creates comprehensive rules from PPTX, PDF, and Image analysis
 // ============================================
 
 /**
@@ -18,16 +19,22 @@ export function analyzePatterns(analyzedAssets) {
   // Detect typography rules
   rules.push(...detectTypographyRules(pptx));
 
-  // Detect spatial rules (logo position, etc.)
-  rules.push(...detectSpatialRules(pptx));
+  // Detect font size rules
+  rules.push(...detectFontSizeRules(pptx));
 
-  // Detect component rules
-  rules.push(...detectComponentRules(pptx));
+  // Detect spacing/grid rules
+  rules.push(...detectSpacingRules(pptx));
+
+  // Detect layout rules
+  rules.push(...detectLayoutRules(pptx));
+
+  // Detect logo rules
+  rules.push(...detectLogoRules(pptx));
 
   // Merge extracted assets
   const extractedAssets = mergeExtractedAssets(pptx, images);
 
-  // Separate rules by confidence - lower threshold to catch more rules
+  // Separate rules by confidence
   const confirmedRules = rules.filter(r => r.confidence >= 0.6);
   const needsReview = rules.filter(r => r.confidence >= 0.3 && r.confidence < 0.6);
 
@@ -35,7 +42,7 @@ export function analyzePatterns(analyzedAssets) {
   if (confirmedRules.length === 0 && needsReview.length === 0 && rules.length > 0) {
     return {
       rules: [],
-      needsReview: rules, // Put all rules in review
+      needsReview: rules,
       extractedAssets
     };
   }
@@ -57,37 +64,56 @@ function detectColorRules(pptxResults, pdfResults, imageResults) {
 
   // Aggregate colors from PPTX themes
   for (const pptx of pptxResults) {
-    for (const themeColor of pptx.theme.colors) {
+    // Theme colors (high priority)
+    for (const themeColor of pptx.theme?.colors || []) {
       const hex = themeColor.value;
-      colorFrequency[hex] = (colorFrequency[hex] || 0) + 10; // Theme colors weighted heavily
+      if (!hex) continue;
+
+      // Weight by color type
+      let weight = 5;
+      if (themeColor.type === 'accent') weight = 10;
+      if (themeColor.name === 'accent1') weight = 15;
+
+      colorFrequency[hex] = (colorFrequency[hex] || 0) + weight;
       colorSources[hex] = colorSources[hex] || [];
-      colorSources[hex].push({ file: pptx.source, location: 'theme', type: themeColor.type });
+      colorSources[hex].push({
+        file: pptx.source,
+        location: 'theme',
+        type: themeColor.type,
+        name: themeColor.label || themeColor.name
+      });
     }
 
-    // Add slide colors
-    for (const [hex, data] of Object.entries(pptx.patterns.colorUsage)) {
+    // Slide colors
+    for (const [hex, data] of Object.entries(pptx.patterns?.colorUsage || {})) {
       colorFrequency[hex] = (colorFrequency[hex] || 0) + data.frequency;
       colorSources[hex] = colorSources[hex] || [];
-      colorSources[hex].push({ file: pptx.source, location: 'slides', contexts: data.contexts });
+      colorSources[hex].push({
+        file: pptx.source,
+        location: 'slides',
+        contexts: data.contexts
+      });
     }
   }
 
   // Add colors from PDFs
   for (const pdf of pdfResults) {
-    for (const color of [...pdf.colors.dominant, ...pdf.colors.accent]) {
+    for (const color of [...(pdf.colors?.dominant || []), ...(pdf.colors?.accent || [])]) {
       const hex = color.hex;
-      colorFrequency[hex] = (colorFrequency[hex] || 0) + color.count;
+      if (!hex) continue;
+      colorFrequency[hex] = (colorFrequency[hex] || 0) + (color.count || 1);
       colorSources[hex] = colorSources[hex] || [];
       colorSources[hex].push({ file: pdf.source, location: 'pages' });
     }
   }
 
-  // Add colors from images
+  // Add colors from images (logos)
   for (const img of imageResults) {
-    if (img.properties.isLikelyLogo) {
-      for (const color of img.colors.dominant) {
+    if (img.properties?.isLikelyLogo) {
+      for (const color of img.colors?.dominant || []) {
         const hex = color.hex;
-        colorFrequency[hex] = (colorFrequency[hex] || 0) + 5; // Logo colors weighted
+        if (!hex) continue;
+        colorFrequency[hex] = (colorFrequency[hex] || 0) + 5;
         colorSources[hex] = colorSources[hex] || [];
         colorSources[hex].push({ file: img.source, location: 'logo' });
       }
@@ -140,22 +166,22 @@ function detectColorRules(pptxResults, pdfResults, imageResults) {
     });
   }
 
-  // Find accent color (different hue from primary)
+  // Find accent colors (different hue from primary)
   if (sortedColors.length > 2) {
     const primaryHue = getHue(sortedColors[0][0]);
+    let accentCount = 0;
 
-    for (let i = 2; i < Math.min(sortedColors.length, 6); i++) {
+    for (let i = 2; i < Math.min(sortedColors.length, 8); i++) {
       const [hex, freq] = sortedColors[i];
       const hue = getHue(hex);
+      const hueDiff = Math.min(Math.abs(hue - primaryHue), 360 - Math.abs(hue - primaryHue));
 
-      // Check if hue is significantly different
-      const hueDiff = Math.abs(hue - primaryHue);
-      if (hueDiff > 30 || hueDiff < 330) {
+      if (hueDiff > 30 && accentCount < 2) {
         const sources = colorSources[hex] || [];
         rules.push({
           id: generateId(),
           category: 'color',
-          name: 'Akzentfarbe',
+          name: accentCount === 0 ? 'Akzentfarbe' : 'Akzentfarbe 2',
           description: `${hex} wird als Akzentfarbe für CTAs und Highlights verwendet`,
           confidence: calculateColorConfidence(freq, sources.length) * 0.8,
           sources,
@@ -166,7 +192,7 @@ function detectColorRules(pptxResults, pdfResults, imageResults) {
           },
           applicableTo: ['all']
         });
-        break;
+        accentCount++;
       }
     }
   }
@@ -181,31 +207,50 @@ function detectTypographyRules(pptxResults) {
   const rules = [];
 
   // Collect fonts from all PPTX files
-  const fontUsage = {
-    major: {},
-    minor: {}
-  };
+  const allFonts = [];
 
   for (const pptx of pptxResults) {
-    if (pptx.theme.fonts.major) {
-      fontUsage.major[pptx.theme.fonts.major] = (fontUsage.major[pptx.theme.fonts.major] || 0) + 1;
+    if (pptx.theme?.fonts?.major) {
+      allFonts.push({ name: pptx.theme.fonts.major, usage: 'heading', source: pptx.source });
     }
-    if (pptx.theme.fonts.minor) {
-      fontUsage.minor[pptx.theme.fonts.minor] = (fontUsage.minor[pptx.theme.fonts.minor] || 0) + 1;
+    if (pptx.theme?.fonts?.minor) {
+      allFonts.push({ name: pptx.theme.fonts.minor, usage: 'body', source: pptx.source });
+    }
+
+    // Additional fonts
+    for (const font of pptx.theme?.fonts?.all || []) {
+      if (font.name && !allFonts.find(f => f.name === font.name)) {
+        allFonts.push({ ...font, source: pptx.source });
+      }
     }
   }
 
-  // Major font (headlines)
-  const majorFonts = Object.entries(fontUsage.major).sort((a, b) => b[1] - a[1]);
-  if (majorFonts.length > 0) {
-    const [font, count] = majorFonts[0];
+  // Count font usage
+  const fontUsage = {};
+  for (const font of allFonts) {
+    const key = font.name;
+    fontUsage[key] = fontUsage[key] || { count: 0, usages: [], sources: [] };
+    fontUsage[key].count++;
+    if (!fontUsage[key].usages.includes(font.usage)) {
+      fontUsage[key].usages.push(font.usage);
+    }
+    fontUsage[key].sources.push(font.source);
+  }
+
+  // Create font rules
+  const sortedFonts = Object.entries(fontUsage).sort((a, b) => b[1].count - a[1].count);
+
+  // Heading font
+  const headingFont = sortedFonts.find(([, data]) => data.usages.includes('heading'));
+  if (headingFont) {
+    const [font, data] = headingFont;
     rules.push({
       id: generateId(),
       category: 'typography',
       name: 'Headline-Schrift',
-      description: `${font} wird für Überschriften verwendet`,
-      confidence: Math.min(0.95, 0.7 + count * 0.1),
-      sources: pptxResults.map(p => ({ file: p.source, location: 'theme' })),
+      description: `"${font}" wird für Überschriften verwendet`,
+      confidence: Math.min(0.95, 0.6 + data.count * 0.1),
+      sources: data.sources.map(s => ({ file: s, location: 'theme' })),
       value: {
         type: 'heading',
         fontFamily: font
@@ -214,17 +259,17 @@ function detectTypographyRules(pptxResults) {
     });
   }
 
-  // Minor font (body)
-  const minorFonts = Object.entries(fontUsage.minor).sort((a, b) => b[1] - a[1]);
-  if (minorFonts.length > 0) {
-    const [font, count] = minorFonts[0];
+  // Body font
+  const bodyFont = sortedFonts.find(([, data]) => data.usages.includes('body'));
+  if (bodyFont) {
+    const [font, data] = bodyFont;
     rules.push({
       id: generateId(),
       category: 'typography',
       name: 'Body-Schrift',
-      description: `${font} wird für Fließtext verwendet`,
-      confidence: Math.min(0.95, 0.7 + count * 0.1),
-      sources: pptxResults.map(p => ({ file: p.source, location: 'theme' })),
+      description: `"${font}" wird für Fließtext verwendet`,
+      confidence: Math.min(0.95, 0.6 + data.count * 0.1),
+      sources: data.sources.map(s => ({ file: s, location: 'theme' })),
       value: {
         type: 'body',
         fontFamily: font
@@ -236,25 +281,205 @@ function detectTypographyRules(pptxResults) {
   // Typography patterns (uppercase, bold, etc.)
   let uppercaseCount = 0;
   let boldCount = 0;
+  let italicCount = 0;
 
   for (const pptx of pptxResults) {
-    if (pptx.patterns.typographyPatterns.usesUppercase) uppercaseCount++;
-    if (pptx.patterns.typographyPatterns.usesBold) boldCount++;
+    if (pptx.patterns?.typographyPatterns?.usesUppercase) uppercaseCount++;
+    if (pptx.patterns?.typographyPatterns?.usesBold) boldCount++;
+    if (pptx.patterns?.typographyPatterns?.usesItalic) italicCount++;
   }
 
   if (uppercaseCount > 0 && pptxResults.length > 0) {
-    const confidence = uppercaseCount / pptxResults.length;
-    if (confidence >= 0.5) {
+    const confidence = 0.5 + (uppercaseCount / pptxResults.length) * 0.4;
+    rules.push({
+      id: generateId(),
+      category: 'typography',
+      name: 'Headline-Stil: Großbuchstaben',
+      description: 'Headlines werden in Großbuchstaben (UPPERCASE) gesetzt',
+      confidence,
+      sources: pptxResults.filter(p => p.patterns?.typographyPatterns?.usesUppercase)
+        .map(p => ({ file: p.source, location: 'slideMaster' })),
+      value: {
+        textTransform: 'uppercase'
+      },
+      applicableTo: ['website', 'presentation', 'flyer']
+    });
+  }
+
+  return rules;
+}
+
+/**
+ * Detect font size rules
+ */
+function detectFontSizeRules(pptxResults) {
+  const rules = [];
+  const allSizes = [];
+
+  for (const pptx of pptxResults) {
+    allSizes.push(...(pptx.typography?.fontSizes || []));
+  }
+
+  if (allSizes.length === 0) return rules;
+
+  // Get unique sizes and sort
+  const uniqueSizes = [...new Set(allSizes)].sort((a, b) => a - b);
+
+  if (uniqueSizes.length >= 3) {
+    // Find heading, subheading, and body sizes
+    const headingSize = uniqueSizes[uniqueSizes.length - 1];
+    const bodySize = uniqueSizes.find(s => s >= 10 && s <= 14) || uniqueSizes[0];
+    const subheadingSize = uniqueSizes.find(s => s > bodySize && s < headingSize);
+
+    rules.push({
+      id: generateId(),
+      category: 'typography',
+      name: 'Schriftgrößen-Hierarchie',
+      description: `Headline: ${headingSize}pt, ${subheadingSize ? `Subheadline: ${subheadingSize}pt, ` : ''}Body: ${bodySize}pt`,
+      confidence: 0.7,
+      sources: pptxResults.map(p => ({ file: p.source, location: 'styles' })),
+      value: {
+        heading: headingSize,
+        subheading: subheadingSize,
+        body: bodySize,
+        scale: uniqueSizes
+      },
+      applicableTo: ['all']
+    });
+  }
+
+  return rules;
+}
+
+/**
+ * Detect spacing/grid rules
+ */
+function detectSpacingRules(pptxResults) {
+  const rules = [];
+  const allSpacings = [];
+
+  for (const pptx of pptxResults) {
+    allSpacings.push(...(pptx.spacing?.commonSpacings || []));
+    allSpacings.push(...(pptx.patterns?.detectedGridValues || []));
+  }
+
+  if (allSpacings.length === 0) return rules;
+
+  // Find grid base
+  let gridBase = 8;
+  for (const pptx of pptxResults) {
+    if (pptx.patterns?.gridBase) {
+      gridBase = pptx.patterns.gridBase;
+      break;
+    }
+  }
+
+  // Get common spacings
+  const spacingCounts = {};
+  for (const spacing of allSpacings) {
+    const rounded = Math.round(spacing / 4) * 4;
+    if (rounded > 0 && rounded < 200) {
+      spacingCounts[rounded] = (spacingCounts[rounded] || 0) + 1;
+    }
+  }
+
+  const commonSpacings = Object.entries(spacingCounts)
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([spacing]) => parseInt(spacing))
+    .sort((a, b) => a - b);
+
+  if (commonSpacings.length > 0) {
+    rules.push({
+      id: generateId(),
+      category: 'spacing',
+      name: 'Grid-System',
+      description: `${gridBase}px Grundraster - Abstände: ${commonSpacings.join(', ')}px`,
+      confidence: 0.6 + Math.min(commonSpacings.length * 0.05, 0.3),
+      sources: pptxResults.map(p => ({ file: p.source, location: 'layouts' })),
+      value: {
+        baseUnit: gridBase,
+        scale: commonSpacings,
+        spacingTokens: {
+          xs: commonSpacings[0] || gridBase,
+          sm: commonSpacings[1] || gridBase * 2,
+          md: commonSpacings[2] || gridBase * 3,
+          lg: commonSpacings[3] || gridBase * 4,
+          xl: commonSpacings[4] || gridBase * 6
+        }
+      },
+      applicableTo: ['website', 'presentation', 'flyer']
+    });
+  }
+
+  return rules;
+}
+
+/**
+ * Detect layout rules
+ */
+function detectLayoutRules(pptxResults) {
+  const rules = [];
+
+  for (const pptx of pptxResults) {
+    // Slide dimensions
+    if (pptx.layouts?.slideSize?.width > 0) {
+      const { width, height } = pptx.layouts.slideSize;
+      const aspectRatio = width / height;
+      let formatName = 'Custom';
+
+      if (Math.abs(aspectRatio - 16/9) < 0.1) formatName = '16:9 Widescreen';
+      else if (Math.abs(aspectRatio - 4/3) < 0.1) formatName = '4:3 Standard';
+      else if (Math.abs(aspectRatio - 1) < 0.1) formatName = '1:1 Quadrat';
+
       rules.push({
         id: generateId(),
-        category: 'typography',
-        name: 'Headline-Stil',
-        description: 'Headlines werden in Großbuchstaben gesetzt',
-        confidence,
-        sources: pptxResults.filter(p => p.patterns.typographyPatterns.usesUppercase)
-          .map(p => ({ file: p.source, location: 'slideMaster' })),
+        category: 'component',
+        name: 'Präsentationsformat',
+        description: `${formatName} (${width}×${height}px)`,
+        confidence: 0.95,
+        sources: [{ file: pptx.source, location: 'presentation' }],
         value: {
-          textTransform: 'uppercase'
+          width,
+          height,
+          aspectRatio: aspectRatio.toFixed(2),
+          format: formatName
+        },
+        applicableTo: ['presentation']
+      });
+      break; // Only need one
+    }
+  }
+
+  // Content margins
+  const allMargins = [];
+  for (const pptx of pptxResults) {
+    allMargins.push(...(pptx.spacing?.margins || []));
+  }
+
+  if (allMargins.length > 0) {
+    const marginCounts = {};
+    for (const margin of allMargins) {
+      const rounded = Math.round(margin / 8) * 8;
+      if (rounded > 0 && rounded < 200) {
+        marginCounts[rounded] = (marginCounts[rounded] || 0) + 1;
+      }
+    }
+
+    const commonMargin = Object.entries(marginCounts)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    if (commonMargin) {
+      rules.push({
+        id: generateId(),
+        category: 'spacing',
+        name: 'Content-Margins',
+        description: `Standard-Außenabstand: ${commonMargin[0]}px`,
+        confidence: 0.5 + Math.min(commonMargin[1] * 0.05, 0.3),
+        sources: pptxResults.map(p => ({ file: p.source, location: 'layouts' })),
+        value: {
+          margin: parseInt(commonMargin[0])
         },
         applicableTo: ['website', 'presentation', 'flyer']
       });
@@ -265,61 +490,51 @@ function detectTypographyRules(pptxResults) {
 }
 
 /**
- * Detect spatial rules (logo position, grid, etc.)
+ * Detect logo rules
  */
-function detectSpatialRules(pptxResults) {
+function detectLogoRules(pptxResults) {
   const rules = [];
+  const logoPositions = [];
 
-  // Grid detection from spacing values
-  const allSpacings = [];
   for (const pptx of pptxResults) {
-    allSpacings.push(...(pptx.patterns.detectedGridValues || []));
+    logoPositions.push(...(pptx.layouts?.logoPositions || []));
   }
 
-  if (allSpacings.length > 0) {
-    // Find common spacing base (likely grid unit)
-    const spacingCounts = {};
-    for (const spacing of allSpacings) {
-      // Check for common grid units
-      for (const base of [4, 8, 10, 12, 16]) {
-        if (spacing % base === 0) {
-          spacingCounts[base] = (spacingCounts[base] || 0) + 1;
-        }
-      }
+  if (logoPositions.length > 0) {
+    // Count position categories
+    const positionCounts = {};
+    for (const logo of logoPositions) {
+      positionCounts[logo.position] = (positionCounts[logo.position] || 0) + 1;
     }
 
-    const sortedBases = Object.entries(spacingCounts).sort((a, b) => b[1] - a[1]);
-    if (sortedBases.length > 0) {
-      const [baseUnit, count] = sortedBases[0];
-      const confidence = Math.min(0.9, count / allSpacings.length);
+    const mostCommon = Object.entries(positionCounts).sort((a, b) => b[1] - a[1])[0];
 
-      if (confidence >= 0.5) {
-        rules.push({
-          id: generateId(),
-          category: 'spacing',
-          name: 'Grid-System',
-          description: `${baseUnit}px Grundraster - alle Abstände als Vielfache von ${baseUnit}`,
-          confidence,
-          sources: pptxResults.map(p => ({ file: p.source, location: 'slides' })),
-          value: {
-            baseUnit: parseInt(baseUnit),
-            scale: [1, 2, 3, 4, 6, 8].map(m => parseInt(baseUnit) * m)
-          },
-          applicableTo: ['website', 'presentation', 'flyer']
-        });
-      }
+    if (mostCommon) {
+      const positionLabels = {
+        'top-left': 'oben links',
+        'top-right': 'oben rechts',
+        'bottom-left': 'unten links',
+        'bottom-right': 'unten rechts',
+        'center': 'zentriert'
+      };
+
+      rules.push({
+        id: generateId(),
+        category: 'component',
+        name: 'Logo-Positionierung',
+        description: `Logo wird bevorzugt ${positionLabels[mostCommon[0]] || mostCommon[0]} platziert`,
+        confidence: 0.5 + Math.min(mostCommon[1] * 0.1, 0.4),
+        sources: pptxResults.map(p => ({ file: p.source, location: 'slides' })),
+        value: {
+          position: mostCommon[0],
+          occurrences: mostCommon[1]
+        },
+        applicableTo: ['website', 'presentation', 'flyer', 'email']
+      });
     }
   }
 
   return rules;
-}
-
-/**
- * Detect component rules (buttons, cards, etc.)
- */
-function detectComponentRules(pptxResults) {
-  // For now, return empty - can be expanded later
-  return [];
 }
 
 /**
@@ -328,36 +543,41 @@ function detectComponentRules(pptxResults) {
 function mergeExtractedAssets(pptxResults, imageResults) {
   const assets = {
     logos: [],
-    images: []
+    images: [],
+    icons: [],
+    backgrounds: []
   };
 
   // From PPTX
   for (const pptx of pptxResults) {
-    assets.logos.push(...pptx.extractedAssets.logos);
-    assets.images.push(...pptx.extractedAssets.images);
+    assets.logos.push(...(pptx.extractedAssets?.logos || []));
+    assets.images.push(...(pptx.extractedAssets?.images || []));
+    assets.icons.push(...(pptx.extractedAssets?.icons || []));
+    assets.backgrounds.push(...(pptx.extractedAssets?.backgrounds || []));
   }
 
   // From images
   for (const img of imageResults) {
-    if (img.properties.isLikelyLogo) {
-      // This is already a data URL from the original file
-      // We need to get it from somewhere or mark it
+    if (img.properties?.isLikelyLogo) {
       assets.logos.push({
         name: img.source,
         isLogo: true,
         confidence: img.confidence,
-        colors: img.colors.dominant
+        colors: img.colors?.dominant
       });
     }
   }
 
   // Sort by confidence
   assets.logos.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  assets.images.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
   return assets;
 }
 
+// ============================================
 // Helper functions
+// ============================================
 
 function generateId() {
   return 'rule-' + Math.random().toString(36).substring(2, 9);
@@ -365,16 +585,15 @@ function generateId() {
 
 function isNearWhiteOrBlack(hex) {
   const rgb = hexToRgb(hex);
+  if (!rgb) return true;
   const luminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
-  return luminance < 20 || luminance > 240;
+  return luminance < 30 || luminance > 225;
 }
 
 function calculateColorConfidence(frequency, sourceCount) {
-  // More frequency and more sources = higher confidence
-  // Lower thresholds to be more generous
-  const freqScore = Math.min(frequency / 5, 1); // Was /20, now /5
-  const sourceScore = Math.min(sourceCount / 2, 1); // Was /3, now /2
-  const base = 0.4; // Minimum confidence for any detected color
+  const freqScore = Math.min(frequency / 5, 1);
+  const sourceScore = Math.min(sourceCount / 2, 1);
+  const base = 0.4;
   return Math.round((base + (freqScore * 0.4 + sourceScore * 0.2)) * 100) / 100;
 }
 
@@ -392,6 +611,8 @@ function detectColorUsage(sources) {
 
 function getHue(hex) {
   const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+
   const r = rgb.r / 255;
   const g = rgb.g / 255;
   const b = rgb.b / 255;
@@ -419,7 +640,7 @@ function hexToRgb(hex) {
     r: parseInt(result[1], 16),
     g: parseInt(result[2], 16),
     b: parseInt(result[3], 16)
-  } : { r: 0, g: 0, b: 0 };
+  } : null;
 }
 
 export const generateRules = analyzePatterns;

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 
 const acceptedTypes = {
-  'pptx': { icon: 'P', label: 'PowerPoint', accept: '.pptx,.ppt' },
+  'pptx': { icon: 'P', label: 'PowerPoint', accept: '.pptx,.ppt,.potx' },
   'pdf': { icon: 'D', label: 'PDF', accept: '.pdf' },
   'image': { icon: 'I', label: 'Bilder', accept: '.png,.jpg,.jpeg,.svg,.webp' }
 };
@@ -37,7 +37,7 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
   const addFiles = (newFiles) => {
     const validFiles = newFiles.filter(file => {
       const ext = file.name.split('.').pop().toLowerCase();
-      return ['pptx', 'ppt', 'pdf', 'png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext);
+      return ['pptx', 'ppt', 'potx', 'pdf', 'png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext);
     });
 
     setFiles(prev => {
@@ -54,7 +54,7 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
 
   const getFileIcon = (filename) => {
     const ext = filename.split('.').pop().toLowerCase();
-    if (ext === 'pptx' || ext === 'ppt') return 'P';
+    if (ext === 'pptx' || ext === 'ppt' || ext === 'potx') return 'P';
     if (ext === 'pdf') return 'D';
     return 'I';
   };
@@ -62,6 +62,7 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
   const getFileType = (filename) => {
     const ext = filename.split('.').pop().toLowerCase();
     if (ext === 'pptx' || ext === 'ppt') return 'PowerPoint';
+    if (ext === 'potx') return 'PowerPoint Template';
     if (ext === 'pdf') return 'PDF';
     return 'Bild';
   };
@@ -105,14 +106,14 @@ export default function AnalyzerUpload({ onStartAnalysis }) {
               <input
                 type="file"
                 multiple
-                accept=".pptx,.ppt,.pdf,.png,.jpg,.jpeg,.svg,.webp"
+                accept=".pptx,.ppt,.potx,.pdf,.png,.jpg,.jpeg,.svg,.webp"
                 onChange={handleFileSelect}
                 hidden
               />
             </label>
           </p>
           <p className="dropzone-hint">
-            PowerPoint, PDF, PNG, JPG, SVG
+            PowerPoint (PPTX/POTX), PDF, PNG, JPG, SVG
           </p>
         </div>
       </div>

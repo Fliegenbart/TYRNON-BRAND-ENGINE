@@ -27,7 +27,7 @@ export async function analyzeFiles(files, onProgress = () => {}) {
     const ext = file.name.split('.').pop().toLowerCase();
 
     try {
-      if (ext === 'pptx' || ext === 'ppt') {
+      if (ext === 'pptx' || ext === 'ppt' || ext === 'potx') {
         const { analyzePptx } = await import('./pptx-analyzer.js');
         results.pptx.push(await analyzePptx(file));
       } else if (ext === 'pdf') {
