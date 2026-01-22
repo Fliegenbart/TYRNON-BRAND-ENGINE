@@ -1,8 +1,9 @@
 // ============================================
 // AI SERVICES - Text, Image, Web Scraping
+// Uses Claude API via serverless function for text generation
 // ============================================
 
-const getApiKey = () => {
+const getOpenAIKey = () => {
   return localStorage.getItem('openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || null;
 };
 
@@ -172,9 +173,9 @@ RÜCKSEITE:
 
 /**
  * Generiert kompletten Asset-Content basierend auf Briefing
+ * Uses Claude API via serverless function
  */
 export async function generateCompleteAsset(brand, assetType, briefing, scrapedContent = null) {
-  const apiKey = getApiKey();
   const brandPrompt = buildBrandPrompt(brand);
   const structure = assetStructures[assetType];
 
@@ -192,38 +193,32 @@ BRIEFING: ${briefing}${contextInfo}
 
 Liefere die Texte strukturiert und direkt einsetzbar. Formatiere klar mit den angegebenen Abschnitten.`;
 
-  if (!apiKey) {
-    return generateDemoAsset(brand, assetType, briefing);
-  }
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Call Claude API via serverless function
+    const response = await fetch('/api/generate-content', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: brandPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.8,
-        max_tokens: 2000
+        brandPrompt,
+        userPrompt
       })
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'AI-Anfrage fehlgeschlagen');
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      // Fallback to demo content if API fails
+      console.warn('Claude API failed, using demo content:', error);
+      return generateDemoAsset(brand, assetType, briefing);
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    return data.content;
   } catch (error) {
     console.error('AI Generation failed:', error);
-    throw error;
+    // Fallback to demo content
+    return generateDemoAsset(brand, assetType, briefing);
   }
 }
 
@@ -232,7 +227,7 @@ Liefere die Texte strukturiert und direkt einsetzbar. Formatiere klar mit den an
  * Returns both raw extracted data and AI analysis
  */
 export async function scrapeWebsite(url) {
-  const apiKey = getApiKey();
+  const apiKey = getOpenAIKey(); // Optional: for AI analysis
 
   // Step 1: Fetch actual website content via our serverless function
   let websiteData;
@@ -371,13 +366,13 @@ function formatExtractedContent(data) {
 }
 
 /**
- * Generiert ein Bild mit DALL-E
+ * Generiert ein Bild mit DALL-E (requires OpenAI API key)
  */
 export async function generateImage(prompt, brand, style = 'modern') {
-  const apiKey = getApiKey();
+  const apiKey = getOpenAIKey();
 
   if (!apiKey) {
-    throw new Error('API-Key benötigt für Bildgenerierung');
+    throw new Error('OpenAI API-Key benötigt für Bildgenerierung (DALL-E)');
   }
 
   const styleGuides = {
@@ -609,7 +604,7 @@ export const textTypes = {
 };
 
 export async function generateText(brand, textType, topic, apiKey = null) {
-  const key = apiKey || getApiKey();
+  const key = apiKey || getOpenAIKey();
   const brandPrompt = buildBrandPrompt(brand);
   const typeConfig = textTypes[textType];
 
