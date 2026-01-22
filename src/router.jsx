@@ -6,6 +6,7 @@ import TokenSystem from './components/tokens/TokenSystem';
 import AssetGenerator from './components/assets/AssetGenerator';
 import ExportCenter from './components/exports/ExportCenter';
 import CampaignManager from './components/campaigns/CampaignManager';
+import BrandIntelligence from './components/intelligence/BrandIntelligence';
 import Settings from './components/Settings';
 
 export const router = createBrowserRouter([
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
           { path: 'assets/:assetType', element: <AssetGenerator /> },
           { path: 'campaigns', element: <CampaignManager /> },
           { path: 'exports', element: <ExportCenter /> },
+          { path: 'intelligence', element: <BrandIntelligence /> },
         ]
       },
       { path: 'settings', element: <Settings /> },

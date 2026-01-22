@@ -51,6 +51,7 @@ export default function Sidebar({ brands, activeBrandId, currentPath, onLogout }
     { path: `/brand/${activeBrandId}`, label: 'Overview', icon: 'O' },
     { path: `/brand/${activeBrandId}/tokens`, label: 'Tokens', icon: 'T' },
     { path: `/brand/${activeBrandId}/assets`, label: 'Assets', icon: 'A' },
+    { path: `/brand/${activeBrandId}/intelligence`, label: 'Intelligence', icon: 'I' },
     { path: `/brand/${activeBrandId}/campaigns`, label: 'Campaigns', icon: 'C' },
     { path: `/brand/${activeBrandId}/exports`, label: 'Exports', icon: 'E' },
   ] : [];
@@ -128,7 +129,7 @@ export default function Sidebar({ brands, activeBrandId, currentPath, onLogout }
         <nav className="sidebar-nav">
           <div className="nav-section">
             <span className="nav-section-title">Brand</span>
-            {navItems.slice(0, 3).map(item => (
+            {navItems.slice(0, 4).map(item => (
               <Link
                 key={item.path}
                 to={item.path}
@@ -141,7 +142,7 @@ export default function Sidebar({ brands, activeBrandId, currentPath, onLogout }
           </div>
           <div className="nav-section">
             <span className="nav-section-title">Marketing</span>
-            {navItems.slice(3).map(item => (
+            {navItems.slice(4).map(item => (
               <Link
                 key={item.path}
                 to={item.path}
