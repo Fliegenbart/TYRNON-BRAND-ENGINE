@@ -15,7 +15,9 @@
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^3.12.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.12.0",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
