@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useBrandStore } from '../../stores/brandStore';
+import { useRulesStore } from '../../stores/rulesStore';
 import { previewComponents } from '../previews/index.jsx';
 import AIStudio from '../AIStudio';
 import ContentEditor from '../ContentEditor';
@@ -25,11 +26,120 @@ export default function AssetGenerator() {
   const { brandId, assetType: urlAssetType } = useParams();
   const navigate = useNavigate();
   const { getBrandById, getAssetContent, updateAssetContent } = useBrandStore();
+  const { getRulesForBrand } = useRulesStore();
 
   const brand = getBrandById(brandId);
   const [selectedAsset, setSelectedAsset] = useState(urlAssetType || 'website');
   const [activeToolTab, setActiveToolTab] = useState('ai');
   const [showSidebar, setShowSidebar] = useState(true);
+  const [showAppliedRules, setShowAppliedRules] = useState(false);
+
+  // Load rules for this brand
+  const allRules = getRulesForBrand(brandId);
+
+  // Filter rules applicable to this asset type
+  const applicableRules = useMemo(() => {
+    return allRules.filter(rule =>
+      rule.applicableTo?.includes('all') ||
+      rule.applicableTo?.includes(selectedAsset)
+    );
+  }, [allRules, selectedAsset]);
+
+  // Convert rules to applied styles
+  const appliedStyles = useMemo(() => {
+    const styles = {
+      colors: {},
+      typography: {},
+      spacing: {},
+      components: {}
+    };
+
+    for (const rule of applicableRules) {
+      switch (rule.category) {
+        case 'color':
+          if (rule.value?.type === 'primary' && rule.value?.color) {
+            styles.colors.primary = rule.value.color;
+          }
+          if (rule.value?.type === 'secondary' && rule.value?.color) {
+            styles.colors.secondary = rule.value.color;
+          }
+          if (rule.value?.type === 'accent' && rule.value?.color) {
+            styles.colors.accent = rule.value.color;
+          }
+          break;
+
+        case 'typography':
+          if (rule.value?.type === 'heading' && rule.value?.fontFamily) {
+            styles.typography.headingFont = rule.value.fontFamily;
+          }
+          if (rule.value?.type === 'body' && rule.value?.fontFamily) {
+            styles.typography.bodyFont = rule.value.fontFamily;
+          }
+          if (rule.value?.textTransform) {
+            styles.typography.headlineTransform = rule.value.textTransform;
+          }
+          if (rule.value?.letterSpacing) {
+            styles.typography.headlineLetterSpacing = rule.value.letterSpacing;
+          }
+          if (rule.value?.heading) {
+            styles.typography.headingSize = rule.value.heading;
+          }
+          if (rule.value?.body) {
+            styles.typography.bodySize = rule.value.body;
+          }
+          break;
+
+        case 'spacing':
+          if (rule.value?.baseUnit) {
+            styles.spacing.baseUnit = rule.value.baseUnit;
+          }
+          if (rule.value?.margin) {
+            styles.spacing.margin = rule.value.margin;
+          }
+          if (rule.value?.spacingTokens) {
+            styles.spacing.tokens = rule.value.spacingTokens;
+          }
+          break;
+
+        case 'component':
+          if (rule.name === 'Logo-Positionierung' && rule.value?.position) {
+            styles.components.logoPosition = rule.value.position;
+          }
+          break;
+      }
+    }
+
+    return styles;
+  }, [applicableRules]);
+
+  // Merge brand defaults with learned rules (rules take priority)
+  const enhancedBrand = useMemo(() => {
+    if (!brand) return null;
+
+    return {
+      ...brand,
+      colors: {
+        ...brand.colors,
+        primary: appliedStyles.colors.primary || brand.colors.primary,
+        secondary: appliedStyles.colors.secondary || brand.colors.secondary,
+        accent: appliedStyles.colors.accent || brand.colors.accent,
+      },
+      fonts: {
+        ...brand.fonts,
+        heading: appliedStyles.typography.headingFont || brand.fonts.heading,
+        body: appliedStyles.typography.bodyFont || brand.fonts.body,
+      },
+      // New: learned style rules
+      learnedStyles: {
+        headlineTransform: appliedStyles.typography.headlineTransform,
+        headlineLetterSpacing: appliedStyles.typography.headlineLetterSpacing,
+        headingSize: appliedStyles.typography.headingSize,
+        bodySize: appliedStyles.typography.bodySize,
+        spacing: appliedStyles.spacing,
+        logoPosition: appliedStyles.components.logoPosition,
+      }
+    };
+  }, [brand, appliedStyles]);
 
   if (!brand) {
     return <div className="not-found">Marke nicht gefunden</div>;
@@ -214,7 +324,7 @@ export default function AssetGenerator() {
             <div className="preview-frame">
               {PreviewComponent && (
                 <PreviewComponent
-                  brand={brand}
+                  brand={enhancedBrand}
                   content={content}
                   onFieldChange={(field, value) => {
                     handleContentChange({
@@ -233,6 +343,56 @@ export default function AssetGenerator() {
               <span className="preview-hint">Klicke auf Texte zum Bearbeiten</span>
             </div>
           </div>
+
+          {/* Applied Rules Indicator */}
+          {applicableRules.length > 0 && (
+            <div className="applied-rules-indicator">
+              <button
+                className={`rules-toggle ${showAppliedRules ? 'active' : ''}`}
+                onClick={() => setShowAppliedRules(!showAppliedRules)}
+              >
+                <span className="rules-badge">{applicableRules.length}</span>
+                <span>Gelernte Regeln aktiv</span>
+                <span className="toggle-arrow">{showAppliedRules ? '▼' : '▶'}</span>
+              </button>
+
+              {showAppliedRules && (
+                <div className="applied-rules-list">
+                  {applicableRules.map((rule) => (
+                    <div key={rule.id} className="applied-rule-item">
+                      <div className="rule-header">
+                        <span className={`rule-category rule-category-${rule.category}`}>
+                          {rule.category === 'color' && '●'}
+                          {rule.category === 'typography' && 'T'}
+                          {rule.category === 'spacing' && '⊞'}
+                          {rule.category === 'component' && '◧'}
+                        </span>
+                        <span className="rule-name">{rule.name}</span>
+                        <span className="rule-confidence">{Math.round(rule.confidence * 100)}%</span>
+                      </div>
+                      <p className="rule-description">{rule.description}</p>
+                      {rule.value?.color && (
+                        <div className="rule-color-preview">
+                          <span
+                            className="color-swatch"
+                            style={{ backgroundColor: rule.value.color }}
+                          />
+                          <span>{rule.value.color}</span>
+                        </div>
+                      )}
+                      {rule.value?.fontFamily && (
+                        <div className="rule-font-preview">
+                          <span style={{ fontFamily: rule.value.fontFamily }}>
+                            {rule.value.fontFamily}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
         {showSidebar && (

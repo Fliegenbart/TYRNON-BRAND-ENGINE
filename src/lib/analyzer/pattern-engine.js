@@ -31,6 +31,9 @@ export function analyzePatterns(analyzedAssets) {
   // Detect logo rules
   rules.push(...detectLogoRules(pptx));
 
+  // Detect component style rules (buttons, cards, etc.)
+  rules.push(...detectComponentStyleRules(pptx, tokens));
+
   // Merge extracted assets (including fonts)
   const extractedAssets = mergeExtractedAssets(pptx, images, fonts);
 
@@ -356,6 +359,50 @@ function detectTypographyRules(pptxResults, fontResults = [], tokenResults = [])
     });
   }
 
+  // Letter-spacing patterns
+  const letterSpacings = [];
+  for (const pptx of pptxResults) {
+    if (pptx.typography?.styles) {
+      for (const style of pptx.typography.styles) {
+        if (style.letterSpacing && style.letterSpacing !== 0) {
+          letterSpacings.push({
+            value: style.letterSpacing,
+            source: pptx.source,
+            context: style.name || 'text'
+          });
+        }
+      }
+    }
+  }
+
+  if (letterSpacings.length > 0) {
+    // Find most common letter-spacing
+    const spacingCounts = {};
+    for (const ls of letterSpacings) {
+      const rounded = Math.round(ls.value * 100) / 100;
+      spacingCounts[rounded] = (spacingCounts[rounded] || 0) + 1;
+    }
+
+    const mostCommon = Object.entries(spacingCounts).sort((a, b) => b[1] - a[1])[0];
+    if (mostCommon) {
+      const spacingValue = parseFloat(mostCommon[0]);
+      const spacingEm = spacingValue > 1 ? `${spacingValue}%` : `${spacingValue}em`;
+
+      rules.push({
+        id: generateId(),
+        category: 'typography',
+        name: 'Letter-Spacing',
+        description: `Headlines verwenden ${spacingEm} Buchstabenabstand`,
+        confidence: 0.5 + Math.min(mostCommon[1] * 0.1, 0.4),
+        sources: letterSpacings.map(ls => ({ file: ls.source, location: 'styles' })),
+        value: {
+          letterSpacing: spacingEm
+        },
+        applicableTo: ['website', 'presentation', 'flyer', 'social']
+      });
+    }
+  }
+
   return rules;
 }
 
@@ -597,6 +644,153 @@ function detectLogoRules(pptxResults) {
   }
 
   return rules;
+}
+
+/**
+ * Detect component style rules (buttons, cards, border-radius, shadows)
+ */
+function detectComponentStyleRules(pptxResults, tokenResults = []) {
+  const rules = [];
+
+  // Collect border radius values
+  const radiusValues = [];
+
+  // From design tokens
+  for (const tokens of tokenResults) {
+    if (!tokens.valid) continue;
+
+    for (const radius of tokens.radii || []) {
+      const value = parseRadiusValue(radius.value);
+      if (value > 0) {
+        radiusValues.push({
+          value,
+          name: radius.name,
+          source: tokens.source
+        });
+      }
+    }
+
+    // Shadows from tokens
+    for (const shadow of tokens.shadows || []) {
+      if (shadow.value) {
+        rules.push({
+          id: generateId(),
+          category: 'component',
+          name: shadow.name || 'Box Shadow',
+          description: `Schatten: ${shadow.value}`,
+          confidence: 0.85,
+          sources: [{ file: tokens.source, location: 'design-tokens' }],
+          value: {
+            boxShadow: shadow.value
+          },
+          applicableTo: ['website', 'social']
+        });
+      }
+    }
+  }
+
+  // From PPTX shape analysis (rounded rectangles)
+  for (const pptx of pptxResults) {
+    if (pptx.shapes?.roundedRectangles) {
+      for (const shape of pptx.shapes.roundedRectangles) {
+        if (shape.cornerRadius) {
+          radiusValues.push({
+            value: shape.cornerRadius,
+            source: pptx.source
+          });
+        }
+      }
+    }
+  }
+
+  // Create border-radius rule from most common values
+  if (radiusValues.length > 0) {
+    const radiusCounts = {};
+    for (const r of radiusValues) {
+      const rounded = Math.round(r.value / 2) * 2; // Round to even numbers
+      if (rounded > 0 && rounded <= 50) {
+        radiusCounts[rounded] = (radiusCounts[rounded] || 0) + 1;
+      }
+    }
+
+    const sortedRadii = Object.entries(radiusCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([val]) => parseInt(val));
+
+    if (sortedRadii.length > 0) {
+      rules.push({
+        id: generateId(),
+        category: 'component',
+        name: 'Border-Radius',
+        description: `Eckenradius: ${sortedRadii.join('px, ')}px`,
+        confidence: 0.6 + Math.min(radiusValues.length * 0.05, 0.3),
+        sources: radiusValues.map(r => ({ file: r.source, location: 'shapes' })),
+        value: {
+          borderRadius: sortedRadii[0],
+          scale: sortedRadii
+        },
+        applicableTo: ['website', 'social', 'email']
+      });
+    }
+  }
+
+  // Button style detection from PPTX
+  const buttonPatterns = [];
+  for (const pptx of pptxResults) {
+    // Look for shapes that could be buttons (small rectangles with fills)
+    if (pptx.shapes?.buttons) {
+      buttonPatterns.push(...pptx.shapes.buttons);
+    }
+  }
+
+  if (buttonPatterns.length > 0) {
+    // Analyze common button properties
+    const buttonColors = {};
+    for (const btn of buttonPatterns) {
+      if (btn.fillColor) {
+        buttonColors[btn.fillColor] = (buttonColors[btn.fillColor] || 0) + 1;
+      }
+    }
+
+    const mostCommonBtnColor = Object.entries(buttonColors).sort((a, b) => b[1] - a[1])[0];
+    if (mostCommonBtnColor) {
+      rules.push({
+        id: generateId(),
+        category: 'component',
+        name: 'Button-Stil',
+        description: `Buttons verwenden ${mostCommonBtnColor[0]} als Hintergrundfarbe`,
+        confidence: 0.5 + Math.min(mostCommonBtnColor[1] * 0.1, 0.4),
+        sources: pptxResults.map(p => ({ file: p.source, location: 'shapes' })),
+        value: {
+          backgroundColor: mostCommonBtnColor[0],
+          borderRadius: radiusValues[0]?.value || 8
+        },
+        applicableTo: ['website', 'email', 'flyer']
+      });
+    }
+  }
+
+  return rules;
+}
+
+/**
+ * Parse border-radius value to pixels
+ */
+function parseRadiusValue(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+
+  const pxMatch = value.match(/^([\d.]+)px$/);
+  if (pxMatch) return parseFloat(pxMatch[1]);
+
+  const remMatch = value.match(/^([\d.]+)rem$/);
+  if (remMatch) return parseFloat(remMatch[1]) * 16;
+
+  const num = parseFloat(value);
+  if (!isNaN(num)) return num;
+
+  return 0;
 }
 
 /**

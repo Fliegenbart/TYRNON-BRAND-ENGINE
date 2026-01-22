@@ -86,8 +86,60 @@ function ImagePlaceholder({ brand, onSelectImage, style, className }) {
   );
 }
 
+// Helper to get headline styles from learned rules
+function getHeadlineStyle(brand) {
+  const baseStyle = { fontFamily: brand.fonts.heading };
+  const learned = brand.learnedStyles || {};
+
+  if (learned.headlineTransform) {
+    baseStyle.textTransform = learned.headlineTransform;
+  }
+  if (learned.headlineLetterSpacing) {
+    baseStyle.letterSpacing = learned.headlineLetterSpacing;
+  }
+  if (learned.headingSize) {
+    baseStyle.fontSize = `${learned.headingSize}pt`;
+  }
+
+  return baseStyle;
+}
+
+// Helper to get body styles from learned rules
+function getBodyStyle(brand) {
+  const baseStyle = { fontFamily: brand.fonts.body };
+  const learned = brand.learnedStyles || {};
+
+  if (learned.bodySize) {
+    baseStyle.fontSize = `${learned.bodySize}pt`;
+  }
+
+  return baseStyle;
+}
+
+// Helper to get spacing from learned rules
+function getSpacing(brand, size = 'md') {
+  const learned = brand.learnedStyles || {};
+  const tokens = learned.spacing?.tokens;
+
+  if (tokens && tokens[size]) {
+    return `${tokens[size]}px`;
+  }
+
+  // Fallbacks
+  const defaults = { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '32px' };
+  return defaults[size] || '16px';
+}
+
+// Helper to get logo position from learned rules
+function getLogoPosition(brand) {
+  return brand.learnedStyles?.logoPosition || 'top-left';
+}
+
 export function WebsitePreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
+  const headlineStyle = getHeadlineStyle(brand);
+  const bodyStyle = getBodyStyle(brand);
+  const logoPosition = getLogoPosition(brand);
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -95,9 +147,15 @@ export function WebsitePreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Determine nav layout based on logo position
+  const navStyle = {
+    borderBottomColor: brand.colors.primary + '30',
+    flexDirection: logoPosition.includes('right') ? 'row-reverse' : 'row'
+  };
+
   return (
     <div className="preview-frame website-preview" style={{ backgroundColor: brand.colors.background, color: brand.colors.text }}>
-      <nav style={{ borderBottomColor: brand.colors.primary + '30' }}>
+      <nav style={navStyle}>
         <div className="nav-logo" style={{ color: brand.colors.primary }}>
           {brand.logo ? <img src={brand.logo} alt="" style={{ height: '24px' }} /> : brand.name}
         </div>
@@ -110,15 +168,15 @@ export function WebsitePreview({ brand, content, onFieldChange }) {
           tag="h1"
           value={fields.headline?.value}
           onChange={(v) => handleChange('headline', v)}
-          placeholder={brand.voice.tagline || 'Ihre Headline hier'}
-          style={{ fontFamily: brand.fonts.heading }}
+          placeholder={brand.voice?.tagline || 'Ihre Headline hier'}
+          style={headlineStyle}
         />
         <EditableText
           tag="p"
           value={fields.subline?.value}
           onChange={(v) => handleChange('subline', v)}
           placeholder="Beschreibung hier"
-          style={{ fontFamily: brand.fonts.body }}
+          style={bodyStyle}
           multiline
         />
         <EditableText
@@ -138,6 +196,8 @@ export function WebsitePreview({ brand, content, onFieldChange }) {
 
 export function SocialPreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
+  const headlineStyle = { ...getHeadlineStyle(brand), color: '#fff' };
+  const logoPosition = getLogoPosition(brand);
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -145,10 +205,13 @@ export function SocialPreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Logo positioning class
+  const logoClass = `social-logo social-logo-${logoPosition}`;
+
   return (
     <div className="preview-frame social-preview" style={{ backgroundColor: brand.colors.primary }}>
       <div className="social-content">
-        {brand.logo && <img src={brand.logo} alt="" className="social-logo" />}
+        {brand.logo && <img src={brand.logo} alt="" className={logoClass} />}
         {fields.image?.value ? (
           <img src={fields.image.value} alt="" className="social-main-image" />
         ) : (
@@ -158,8 +221,8 @@ export function SocialPreview({ brand, content, onFieldChange }) {
           tag="h2"
           value={fields.headline?.value}
           onChange={(v) => handleChange('headline', v)}
-          placeholder={brand.voice.tagline || 'Social Post'}
-          style={{ fontFamily: brand.fonts.heading, color: '#fff' }}
+          placeholder={brand.voice?.tagline || 'Social Post'}
+          style={headlineStyle}
         />
         <div className="social-accent" style={{ backgroundColor: brand.colors.accent }} />
         {fields.hashtags?.value && (
@@ -178,6 +241,10 @@ export function SocialPreview({ brand, content, onFieldChange }) {
 
 export function PresentationPreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
+  const headlineStyle = { ...getHeadlineStyle(brand), color: brand.colors.text };
+  const bodyStyle = getBodyStyle(brand);
+  const logoPosition = getLogoPosition(brand);
+  const margin = getSpacing(brand, 'lg');
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -185,18 +252,24 @@ export function PresentationPreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Position header based on logo position
+  const headerStyle = {
+    backgroundColor: brand.colors.primary,
+    justifyContent: logoPosition.includes('right') ? 'flex-end' : 'flex-start'
+  };
+
   return (
     <div className="preview-frame presentation-preview" style={{ backgroundColor: brand.colors.background }}>
-      <div className="slide-header" style={{ backgroundColor: brand.colors.primary }}>
+      <div className="slide-header" style={headerStyle}>
         {brand.logo && <img src={brand.logo} alt="" />}
       </div>
-      <div className="slide-content">
+      <div className="slide-content" style={{ padding: margin }}>
         <EditableText
           tag="h2"
           value={fields.title?.value}
           onChange={(v) => handleChange('title', v)}
           placeholder="Präsentation"
-          style={{ fontFamily: brand.fonts.heading, color: brand.colors.text }}
+          style={headlineStyle}
         />
         {fields.subtitle?.value && (
           <EditableText
@@ -205,10 +278,10 @@ export function PresentationPreview({ brand, content, onFieldChange }) {
             onChange={(v) => handleChange('subtitle', v)}
             placeholder="Untertitel"
             className="slide-subtitle"
-            style={{ fontFamily: brand.fonts.body }}
+            style={bodyStyle}
           />
         )}
-        <div className="slide-bullets" style={{ fontFamily: brand.fonts.body }}>
+        <div className="slide-bullets" style={bodyStyle}>
           {['Punkt 1', 'Punkt 2', 'Punkt 3'].map((t, i) => (
             <div key={i} className="bullet"><span style={{ backgroundColor: brand.colors.accent }} />{t}</div>
           ))}
@@ -220,6 +293,10 @@ export function PresentationPreview({ brand, content, onFieldChange }) {
 
 export function FlyerPreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
+  const headlineStyle = { ...getHeadlineStyle(brand), color: brand.colors.text };
+  const bodyStyle = getBodyStyle(brand);
+  const logoPosition = getLogoPosition(brand);
+  const margin = getSpacing(brand, 'md');
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -227,9 +304,15 @@ export function FlyerPreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Header positioning based on logo position
+  const headerStyle = {
+    backgroundColor: brand.colors.primary,
+    justifyContent: logoPosition.includes('right') ? 'flex-end' : 'flex-start'
+  };
+
   return (
     <div className="preview-frame flyer-preview" style={{ backgroundColor: brand.colors.background }}>
-      <div className="flyer-header" style={{ backgroundColor: brand.colors.primary }}>
+      <div className="flyer-header" style={headerStyle}>
         {brand.logo && <img src={brand.logo} alt="" />}
       </div>
       {fields.image?.value ? (
@@ -237,20 +320,20 @@ export function FlyerPreview({ brand, content, onFieldChange }) {
       ) : (
         <ImagePlaceholder brand={brand} className="flyer-image-placeholder" />
       )}
-      <div className="flyer-body">
+      <div className="flyer-body" style={{ padding: margin }}>
         <EditableText
           tag="h2"
           value={fields.headline?.value}
           onChange={(v) => handleChange('headline', v)}
           placeholder="Flyer Titel"
-          style={{ fontFamily: brand.fonts.heading, color: brand.colors.text }}
+          style={headlineStyle}
         />
         <EditableText
           tag="p"
           value={fields.description?.value}
           onChange={(v) => handleChange('description', v)}
           placeholder="Beschreibung"
-          style={{ fontFamily: brand.fonts.body }}
+          style={bodyStyle}
           multiline
         />
         <EditableText
@@ -268,6 +351,10 @@ export function FlyerPreview({ brand, content, onFieldChange }) {
 
 export function EmailPreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
+  const headlineStyle = getHeadlineStyle(brand);
+  const bodyStyle = getBodyStyle(brand);
+  const logoPosition = getLogoPosition(brand);
+  const margin = getSpacing(brand, 'lg');
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -275,18 +362,25 @@ export function EmailPreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Header positioning
+  const headerStyle = {
+    backgroundColor: brand.colors.primary,
+    justifyContent: logoPosition.includes('right') ? 'flex-end' :
+                    logoPosition === 'center' ? 'center' : 'flex-start'
+  };
+
   return (
     <div className="preview-frame email-preview">
-      <div className="email-header" style={{ backgroundColor: brand.colors.primary }}>
+      <div className="email-header" style={headerStyle}>
         {brand.logo && <img src={brand.logo} alt="" />}
       </div>
-      <div className="email-body">
+      <div className="email-body" style={{ padding: margin }}>
         <EditableText
           tag="h2"
           value={fields.subject?.value}
           onChange={(v) => handleChange('subject', v)}
           placeholder="Newsletter Betreff"
-          style={{ fontFamily: brand.fonts.heading }}
+          style={headlineStyle}
         />
         {fields.greeting?.value && (
           <EditableText
@@ -295,6 +389,7 @@ export function EmailPreview({ brand, content, onFieldChange }) {
             onChange={(v) => handleChange('greeting', v)}
             placeholder="Anrede"
             className="email-greeting"
+            style={bodyStyle}
           />
         )}
         <EditableText
@@ -302,7 +397,7 @@ export function EmailPreview({ brand, content, onFieldChange }) {
           value={fields.body?.value}
           onChange={(v) => handleChange('body', v)}
           placeholder="Inhalt hier..."
-          style={{ fontFamily: brand.fonts.body }}
+          style={bodyStyle}
           multiline
         />
         <EditableText
@@ -320,6 +415,9 @@ export function EmailPreview({ brand, content, onFieldChange }) {
 export function BusinessCardPreview({ brand, content, onFieldChange }) {
   const fields = content?.fields || {};
   const qrSvg = generateVCardQR(content, brand, { size: 50 });
+  const headlineStyle = { ...getHeadlineStyle(brand), color: brand.colors.text };
+  const bodyStyle = { ...getBodyStyle(brand), color: brand.colors.primary };
+  const logoPosition = getLogoPosition(brand);
 
   const handleChange = (field, value) => {
     if (onFieldChange) {
@@ -327,17 +425,20 @@ export function BusinessCardPreview({ brand, content, onFieldChange }) {
     }
   };
 
+  // Position logo based on learned rules
+  const logoClass = `card-logo card-logo-${logoPosition}`;
+
   return (
     <div className="preview-frame businesscard-preview">
       <div className="card-front" style={{ backgroundColor: brand.colors.background, borderColor: brand.colors.primary }}>
-        {brand.logo && <img src={brand.logo} alt="" className="card-logo" />}
+        {brand.logo && <img src={brand.logo} alt="" className={logoClass} />}
         <EditableText
           tag="div"
           className="card-name"
           value={fields.name?.value}
           onChange={(v) => handleChange('name', v)}
           placeholder="Max Mustermann"
-          style={{ fontFamily: brand.fonts.heading, color: brand.colors.text }}
+          style={headlineStyle}
         />
         <EditableText
           tag="div"
@@ -345,7 +446,7 @@ export function BusinessCardPreview({ brand, content, onFieldChange }) {
           value={fields.title?.value}
           onChange={(v) => handleChange('title', v)}
           placeholder="Position"
-          style={{ fontFamily: brand.fonts.body, color: brand.colors.primary }}
+          style={bodyStyle}
         />
       </div>
       <div className="card-back" style={{ backgroundColor: brand.colors.primary }}>

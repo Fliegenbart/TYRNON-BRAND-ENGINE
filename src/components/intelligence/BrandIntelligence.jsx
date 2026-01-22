@@ -77,6 +77,69 @@ export default function BrandIntelligence() {
     setAnalysisResults(null);
   }, []);
 
+  const handleFigmaAnalysis = useCallback((analysis) => {
+    // Convert Figma analysis to rules format
+    const rules = [];
+
+    // Add color rules from Figma
+    if (analysis.colors && analysis.colors.length > 0) {
+      analysis.colors.forEach((color, index) => {
+        if (color.value) {
+          rules.push({
+            id: `figma-color-${index}`,
+            category: 'color',
+            name: color.name || `Figma Color ${index + 1}`,
+            description: color.description || `Farbe aus ${analysis.fileName}`,
+            confidence: analysis.confidence || 0.95,
+            sources: [{ file: analysis.fileName, location: 'figma', type: 'figma' }],
+            value: {
+              color: color.value,
+              opacity: color.opacity || 1,
+              usage: []
+            },
+            applicableTo: ['all']
+          });
+        }
+      });
+    }
+
+    // Add font rules from Figma
+    if (analysis.fonts && analysis.fonts.length > 0) {
+      analysis.fonts.forEach((font, index) => {
+        rules.push({
+          id: `figma-font-${index}`,
+          category: 'typography',
+          name: font.name,
+          description: `Schriftart aus ${analysis.fileName}`,
+          confidence: analysis.confidence || 0.95,
+          sources: [{ file: analysis.fileName, location: 'figma', type: 'figma' }],
+          value: {
+            fontFamily: font.name,
+            weights: font.weights || [],
+            fontSize: font.fontSize,
+            lineHeight: font.lineHeight
+          },
+          applicableTo: ['all']
+        });
+      });
+    }
+
+    // Store results
+    const results = {
+      rules: rules.filter(r => r.confidence >= 0.7),
+      needsReview: rules.filter(r => r.confidence < 0.7 && r.confidence >= 0.5),
+      extractedAssets: {
+        logos: analysis.logos || [],
+        components: analysis.components || []
+      }
+    };
+
+    setAnalysisResults(results);
+    setRulesForBrand(brandId, [...results.rules, ...results.needsReview]);
+    setAnalysisStatus(brandId, 'review');
+    setStep('review');
+  }, [brandId, setAnalysisStatus, setRulesForBrand]);
+
   if (!brand) {
     return <div className="not-found">Marke nicht gefunden</div>;
   }
@@ -110,7 +173,10 @@ export default function BrandIntelligence() {
         )}
 
         {step === 'upload' && (
-          <AnalyzerUpload onStartAnalysis={handleStartAnalysis} />
+          <AnalyzerUpload
+            onStartAnalysis={handleStartAnalysis}
+            onFigmaAnalysis={handleFigmaAnalysis}
+          />
         )}
 
         {step === 'analyzing' && (
