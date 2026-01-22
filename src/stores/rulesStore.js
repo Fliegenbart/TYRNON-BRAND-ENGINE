@@ -167,7 +167,13 @@ export const useRulesStore = create(
     }),
     {
       name: 'brand-rules-storage',
-      version: 1
+      version: 2,
+      // Only persist rules and status, NOT extractedAssets (too large for localStorage)
+      partialize: (state) => ({
+        rules: state.rules,
+        analysisStatus: state.analysisStatus
+        // extractedAssets is intentionally excluded - too large for localStorage
+      })
     }
   )
 );

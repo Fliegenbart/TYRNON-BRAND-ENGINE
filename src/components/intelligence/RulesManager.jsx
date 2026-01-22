@@ -8,7 +8,7 @@ const categoryLabels = {
   component: { label: 'Komponenten', icon: 'K' }
 };
 
-export default function RulesManager({ brandId, onReanalyze }) {
+export default function RulesManager({ brandId, onReanalyze, extractedAssets }) {
   const {
     getRulesForBrand,
     getRuleSummary,
@@ -16,8 +16,7 @@ export default function RulesManager({ brandId, onReanalyze }) {
     updateRule,
     clearRules,
     exportRules,
-    importRules,
-    getExtractedAssets
+    importRules
   } = useRulesStore();
 
   const [filter, setFilter] = useState('all');
@@ -26,7 +25,7 @@ export default function RulesManager({ brandId, onReanalyze }) {
 
   const rules = getRulesForBrand(brandId);
   const summary = getRuleSummary(brandId);
-  const assets = getExtractedAssets(brandId);
+  const assets = extractedAssets || { logos: [], images: [] };
 
   const filteredRules = filter === 'all'
     ? rules

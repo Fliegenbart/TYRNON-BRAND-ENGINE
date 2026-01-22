@@ -52,10 +52,11 @@ export default function BrandIntelligence() {
       });
 
       setAnalysisResults(results);
+      // Don't pass extractedAssets to store - too large for localStorage
+      // Keep them in local state only (analysisResults)
       setRulesForBrand(
         brandId,
-        [...results.rules, ...results.needsReview],
-        results.extractedAssets
+        [...results.rules, ...results.needsReview]
       );
       setStep('review');
     } catch (err) {
@@ -131,6 +132,7 @@ export default function BrandIntelligence() {
           <RulesManager
             brandId={brandId}
             onReanalyze={handleReanalyze}
+            extractedAssets={analysisResults?.extractedAssets}
           />
         )}
       </div>
