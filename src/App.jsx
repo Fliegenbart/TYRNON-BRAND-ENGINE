@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import './styles.css';
 
-// Components
+// Simple Mode (default)
+import SimpleBrandEngine from './components/simple/SimpleBrandEngine';
+
+// Pro Mode Components
 import LoginScreen from './components/LoginScreen';
 import BrandSidebar from './components/BrandSidebar';
 import BrandEditor from './components/BrandEditor';
@@ -192,7 +195,21 @@ function BrandEngine() {
 // ============================================
 export default function App() {
   const [isAuth, setIsAuth] = useState(() => localStorage.getItem('brand_engine_auth') === 'true');
+  const [mode, setMode] = useState(() => localStorage.getItem('brand_engine_mode') || 'simple');
+
+  const toggleMode = () => {
+    const newMode = mode === 'simple' ? 'pro' : 'simple';
+    localStorage.setItem('brand_engine_mode', newMode);
+    setMode(newMode);
+  };
 
   if (!isAuth) return <LoginScreen onLogin={() => setIsAuth(true)} />;
+
+  // Default: Simple Mode (3-step AI-driven flow)
+  if (mode === 'simple') {
+    return <SimpleBrandEngine />;
+  }
+
+  // Pro Mode: Full feature set with sidebars and manual controls
   return <BrandEngine />;
 }
