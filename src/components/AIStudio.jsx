@@ -138,12 +138,52 @@ export default function AIStudio({ brand, selectedAsset, onApplyContent }) {
               </button>
             </div>
             {scrapedContent && (
-              <div className="ai-scraped-preview">
+              <div className="ai-scraped-preview expanded">
                 <div className="scraped-header">
-                  <span>Extrahierte Inhalte</span>
-                  <button onClick={() => setScrapedContent(null)}>x</button>
+                  <span className="scraped-title">Website-Analyse</span>
+                  <div className="scraped-actions">
+                    <button
+                      className="btn-use-content"
+                      onClick={() => setBriefing(prev => prev + '\n\nWebsite-Kontext:\n' + scrapedContent.slice(0, 1000))}
+                      title="In Briefing übernehmen"
+                    >
+                      Nutzen
+                    </button>
+                    <button onClick={() => setScrapedContent(null)} className="btn-close">×</button>
+                  </div>
                 </div>
-                <pre>{scrapedContent.slice(0, 500)}...</pre>
+                <div className="scraped-content">
+                  {scrapedContent.split('\n').map((line, i) => {
+                    if (line.startsWith('📊') || line.startsWith('📄')) {
+                      return <h4 key={i} className="scraped-section-title">{line}</h4>;
+                    }
+                    if (line.startsWith('**') && line.endsWith('**')) {
+                      return <h5 key={i} className="scraped-label">{line.replace(/\*\*/g, '')}</h5>;
+                    }
+                    if (line.startsWith('**')) {
+                      const [label, ...rest] = line.split(':');
+                      return (
+                        <p key={i} className="scraped-line">
+                          <strong>{label.replace(/\*\*/g, '')}:</strong>
+                          {rest.join(':')}
+                        </p>
+                      );
+                    }
+                    if (line.startsWith('•')) {
+                      return <p key={i} className="scraped-bullet">{line}</p>;
+                    }
+                    if (line.startsWith('"')) {
+                      return <blockquote key={i} className="scraped-quote">{line}</blockquote>;
+                    }
+                    if (line.startsWith('---')) {
+                      return <hr key={i} className="scraped-divider" />;
+                    }
+                    if (line.trim()) {
+                      return <p key={i}>{line}</p>;
+                    }
+                    return null;
+                  })}
+                </div>
               </div>
             )}
           </div>

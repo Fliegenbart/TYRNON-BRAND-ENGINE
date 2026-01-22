@@ -228,30 +228,70 @@ Liefere die Texte strukturiert und direkt einsetzbar. Formatiere klar mit den an
 }
 
 /**
- * Scrape Website-Inhalte über Proxy/API
+ * Fetch and analyze website content
+ * Returns both raw extracted data and AI analysis
  */
 export async function scrapeWebsite(url) {
   const apiKey = getApiKey();
 
-  if (!apiKey) {
-    throw new Error('API-Key benötigt für Website-Analyse');
+  // Step 1: Fetch actual website content via our serverless function
+  let websiteData;
+  try {
+    const fetchResponse = await fetch('/api/fetch-website', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+
+    if (!fetchResponse.ok) {
+      const error = await fetchResponse.json();
+      throw new Error(error.error || 'Website konnte nicht geladen werden');
+    }
+
+    websiteData = await fetchResponse.json();
+  } catch (error) {
+    console.error('Website fetch failed:', error);
+    throw new Error(`Website-Abruf fehlgeschlagen: ${error.message}`);
   }
 
-  // Use a CORS proxy or serverless function in production
-  // For now, we'll use a simple approach with GPT to describe what to extract
-  const prompt = `Analysiere die folgende URL und extrahiere die wichtigsten Marketing-relevanten Inhalte:
+  // Format extracted data for display
+  const extractedContent = formatExtractedContent(websiteData);
 
-URL: ${url}
+  // If no API key, return just the extracted content
+  if (!apiKey) {
+    return extractedContent;
+  }
 
-Extrahiere und fasse zusammen:
-1. Hauptbotschaft/Value Proposition
-2. Wichtigste Features/Vorteile
-3. Zielgruppe (falls erkennbar)
-4. Tonalität/Stil
-5. Call-to-Actions
-6. Wichtige Keywords
+  // Step 2: Have AI analyze the extracted content
+  const analysisPrompt = `Analysiere diese Website-Inhalte und extrahiere Marketing-relevante Insights:
 
-Falls du die URL nicht direkt lesen kannst, gib basierend auf dem URL-Format eine Einschätzung, was für Inhalte zu erwarten wären.`;
+WEBSITE META:
+- Titel: ${websiteData.meta.title}
+- Beschreibung: ${websiteData.meta.description}
+- Keywords: ${websiteData.meta.keywords}
+
+ÜBERSCHRIFTEN:
+H1: ${websiteData.headings.h1.join(' | ')}
+H2: ${websiteData.headings.h2.join(' | ')}
+
+INHALTE:
+${websiteData.content.paragraphs.slice(0, 10).join('\n\n')}
+
+CALL-TO-ACTIONS:
+${websiteData.ctas.join(', ')}
+
+NAVIGATION:
+${websiteData.navigation.join(', ')}
+
+---
+
+Analysiere und fasse zusammen:
+1. **Value Proposition**: Was ist das Hauptversprechen?
+2. **Kernbotschaften**: Die 3 wichtigsten Messages
+3. **Zielgruppe**: Wer wird angesprochen?
+4. **Tonalität**: Wie ist der Kommunikationsstil?
+5. **Stärken**: Was macht die Website gut?
+6. **Content-Ideen**: 3 Ideen, die wir für ähnliche Inhalte nutzen können`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -263,24 +303,71 @@ Falls du die URL nicht direkt lesen kannst, gib basierend auf dem URL-Format ein
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: 'Du bist ein Marketing-Analyst, der Websites analysiert und die wichtigsten Inhalte extrahiert.' },
-          { role: 'user', content: prompt }
+          { role: 'system', content: 'Du bist ein erfahrener Marketing-Analyst. Analysiere Website-Inhalte präzise und liefere actionable Insights auf Deutsch.' },
+          { role: 'user', content: analysisPrompt }
         ],
         temperature: 0.3,
-        max_tokens: 1000
+        max_tokens: 1500
       })
     });
 
     if (!response.ok) {
-      throw new Error('Website-Analyse fehlgeschlagen');
+      // Return extracted content without AI analysis
+      return extractedContent;
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    const aiAnalysis = data.choices[0].message.content;
+
+    return `📊 AI-ANALYSE
+
+${aiAnalysis}
+
+---
+
+📄 EXTRAHIERTE INHALTE
+
+${extractedContent}`;
   } catch (error) {
-    console.error('Scraping failed:', error);
-    throw error;
+    console.error('AI analysis failed:', error);
+    // Return extracted content without AI analysis
+    return extractedContent;
   }
+}
+
+/**
+ * Format extracted website data for display
+ */
+function formatExtractedContent(data) {
+  const sections = [];
+
+  if (data.meta.title) {
+    sections.push(`**Titel:** ${data.meta.title}`);
+  }
+  if (data.meta.description) {
+    sections.push(`**Meta-Beschreibung:** ${data.meta.description}`);
+  }
+
+  if (data.headings.h1.length > 0) {
+    sections.push(`\n**Hauptüberschriften (H1):**\n${data.headings.h1.map(h => `• ${h}`).join('\n')}`);
+  }
+  if (data.headings.h2.length > 0) {
+    sections.push(`\n**Zwischenüberschriften (H2):**\n${data.headings.h2.map(h => `• ${h}`).join('\n')}`);
+  }
+
+  if (data.content.paragraphs.length > 0) {
+    sections.push(`\n**Haupttext-Auszüge:**\n${data.content.paragraphs.slice(0, 5).map(p => `"${p.slice(0, 200)}${p.length > 200 ? '...' : ''}"`).join('\n\n')}`);
+  }
+
+  if (data.ctas.length > 0) {
+    sections.push(`\n**Call-to-Actions:**\n${data.ctas.map(c => `• ${c}`).join('\n')}`);
+  }
+
+  if (data.navigation.length > 0) {
+    sections.push(`\n**Navigation:**\n${data.navigation.slice(0, 10).join(' | ')}`);
+  }
+
+  return sections.join('\n');
 }
 
 /**
